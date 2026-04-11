@@ -98,6 +98,36 @@ try
 					++i;
 					configPath = argv[i];
 				}
+				else if (std::strcmp(argv[i] + 2, "host") == 0)
+				{
+					gfx.networkMode = true;
+					gfx.networkIsHost = true;
+					if (i + 1 < argc && argv[i+1][0] != '-')
+					{
+						++i;
+						gfx.networkPort = std::atoi(argv[i]);
+					}
+					// else use default port 7373
+				}
+				else if (std::strcmp(argv[i] + 2, "connect") == 0 && i + 1 < argc)
+				{
+					++i;
+					gfx.networkMode = true;
+					gfx.networkIsHost = false;
+
+					std::string target = argv[i];
+					auto colon = target.rfind(':');
+					if (colon != std::string::npos)
+					{
+						gfx.networkHost = target.substr(0, colon);
+						gfx.networkPort = std::atoi(target.substr(colon + 1).c_str());
+					}
+					else
+					{
+						gfx.networkHost = target;
+						// use default port 7373
+					}
+				}
 				break;
 			}
 		}

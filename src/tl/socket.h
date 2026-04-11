@@ -18,7 +18,7 @@ typedef struct tl_internet_addr tl_internet_addr;
 TL_SOCK_API tl_socket tl_socket_invalid();
 
 TL_SOCK_API int  tl_socket_is_valid(tl_socket sock);
-TL_SOCK_API void tl_socket_close();
+TL_SOCK_API void tl_socket_close(tl_socket sock);
 
 TL_SOCK_API tl_socket tl_tcp_socket();
 TL_SOCK_API tl_socket tl_udp_socket();

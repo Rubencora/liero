@@ -57,18 +57,20 @@
 # endif
 #endif
 
-#if !GVL_X86 && !GVL_X86_64
+#if !GVL_X86 && !GVL_X86_64 && !GVL_ARM64
 # if defined(_M_X64) || defined(__x86_64__) || GVL_WIN64
 #  define GVL_X86_64 1
 # elif defined(__i386__) || defined(_M_IX86) || defined(i386) || defined(i486) || defined(intel) || defined(x86) || defined(i86pc)
 #  define GVL_X86 1
+# elif defined(__aarch64__) || defined(_M_ARM64)
+#  define GVL_ARM64 1
 # else
 #  error "Unknown architecture, please add it"
 # endif
 #endif
 
 #if !GVL_LITTLE_ENDIAN && !GVL_BIG_ENDIAN
-# if GVL_X86 || GVL_X86_64
+# if GVL_X86 || GVL_X86_64 || GVL_ARM64
 #  define GVL_LITTLE_ENDIAN 1
 # else
 #  define GVL_BIG_ENDIAN 1
@@ -100,14 +102,14 @@
 #if !defined(GVL_X87)
 # if GVL_X86
 #  define GVL_X87 1 // Assume the compiler generates x87 code on x86 unless otherwise stated
-# elif GVL_X86_64
-#  define GVL_X87 0 // SSE2 is typically used on GVL_X86_64
+# elif GVL_X86_64 || GVL_ARM64
+#  define GVL_X87 0 // SSE2/NEON is typically used on x86_64/ARM64
 # endif
 #endif
 
 /* Whether or not types can be read from unaligned addresses */
 #if !defined(GVL_UNALIGNED_ACCESS)
-# if GVL_X86 || GVL_X86_64
+# if GVL_X86 || GVL_X86_64 || GVL_ARM64
 #  define GVL_UNALIGNED_ACCESS 1
 # else
 #  define GVL_UNALIGNED_ACCESS 0
@@ -116,7 +118,7 @@
 
 /* At least x86 and x86_64 provide efficient masked shift counts in shifts */
 #if !defined(GVL_MASKED_SHIFT_COUNT)
-# if GVL_X86 || GVL_X86_64
+# if GVL_X86 || GVL_X86_64 || GVL_ARM64
 #  define GVL_MASKED_SHIFT_COUNT 1
 # else
 #  define GVL_MASKED_SHIFT_COUNT 0

@@ -24,6 +24,7 @@
 
 #include "controller/replayController.hpp"
 #include "controller/localController.hpp"
+#include "controller/networkController.hpp"
 #include "controller/controller.hpp"
 
 #include "gfx/macros.hpp"
@@ -1836,7 +1837,27 @@ void Gfx::playerSettings(int player)
 void Gfx::mainLoop()
 {
 restart:
-	controller.reset(new LocalController(common, settings));
+	if(networkMode)
+	{
+		NetworkController* netCtrl = nullptr;
+		if(networkIsHost)
+			netCtrl = NetworkController::createHost(networkPort, common, settings);
+		else
+			netCtrl = NetworkController::createClient(networkHost, networkPort, common, settings);
+
+		if(!netCtrl)
+		{
+			fprintf(stderr, "[net] Failed to establish network connection\n");
+			SDL_Quit();
+			return;
+		}
+		controller.reset(netCtrl);
+		networkMode = false; // one session only
+	}
+	else
+	{
+		controller.reset(new LocalController(common, settings));
+	}
 
 	{
 		Level newLevel(*common);

@@ -64,8 +64,10 @@ set(GAME_SOURCES ${SOURCES}
     src/game/weapsel.cpp
     src/game/controller/commonController.cpp
     src/game/controller/localController.cpp
+    src/game/controller/networkController.cpp
     src/game/controller/replayController.cpp
     src/game/controller/stats_presenter.cpp
+    src/tl/socket.c
     src/game/menu/booleanSwitchBehavior.cpp
     src/game/menu/enumBehavior.cpp
     src/game/menu/hiddenMenu.cpp
@@ -104,7 +106,14 @@ endif(APPLE)
 add_executable(openliero WIN32 ${GAME_SOURCES} ${RESOURCE_FILES} pkg/win32_icon.rc)
 add_executable(tctool ${TC_TOOL_SOURCES})
 add_executable(videotool EXCLUDE_FROM_ALL ${VIDEO_TOOL_SOURCES})
-target_link_libraries(openliero SDL2::SDL2 SDL2_image::SDL2_image)
+if(APPLE)
+    target_link_libraries(openliero SDL2::SDL2 SDL2_image::SDL2_image
+        "-framework CoreFoundation"
+        "-framework AppKit"
+        "-framework Cocoa")
+else()
+    target_link_libraries(openliero SDL2::SDL2 SDL2_image::SDL2_image)
+endif()
 target_link_libraries(tctool SDL2::SDL2)
 target_link_libraries(videotool SDL2::SDL2 avcodec avformat avutil dl pthread swresample swscale x264)
 include_directories(src/game)

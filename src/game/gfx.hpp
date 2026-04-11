@@ -293,6 +293,12 @@ struct Gfx
 
 	std::vector<Joystick> joysticks;
 
+	// Network game configuration (set before mainLoop)
+	bool networkMode = false;
+	bool networkIsHost = false;
+	std::string networkHost;
+	int networkPort = 7373;
+
 	SDL_Keysym keyBuf[32], *keyBufPtr;
 
 	std::vector<std::pair<int, int>> debugPoints;
