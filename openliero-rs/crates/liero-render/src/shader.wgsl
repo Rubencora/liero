@@ -1,7 +1,8 @@
 // shader.wgsl — Paletted R8 framebuffer → RGBA display.
 //
 // Bindings:
-//   0: frame_tex — R8Uint texture (504×350), one palette index per pixel.
+//   0: frame_tex — R8Unorm texture (320×200), palette index stored as float/255.
+//                  (R8Uint is avoided: WebGL2 integer texture sampling is unreliable.)
 //   1: lut_tex   — Rgba8Unorm 256×1 texture, one RGBA entry per palette index.
 //   2: opts      — uniform: { scanlines: u32 } (bit 0 = CRT scanlines on/off).
 
@@ -14,7 +15,7 @@ struct Opts {
     scanlines: u32,
 };
 
-@group(0) @binding(0) var frame_tex: texture_2d<u32>;
+@group(0) @binding(0) var frame_tex: texture_2d<f32>;
 @group(0) @binding(1) var lut_tex:   texture_2d<f32>;
 @group(0) @binding(2) var<uniform>   opts: Opts;
 
@@ -45,7 +46,8 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dim   = vec2<f32>(textureDimensions(frame_tex));
     let coord = vec2<i32>(in.uv * dim);
-    let idx   = i32(textureLoad(frame_tex, coord, 0).r);
+    // R8Unorm: stored as float 0.0–1.0, recover palette index 0–255.
+    let idx   = i32(textureLoad(frame_tex, coord, 0).r * 255.0 + 0.5);
     var color = textureLoad(lut_tex, vec2<i32>(idx, 0), 0);
 
     // CRT scanlines: darken every even row slightly.

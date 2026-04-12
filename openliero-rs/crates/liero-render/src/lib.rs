@@ -155,14 +155,19 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        // ── Frame texture: 320×200 R8Uint ──────────────────────────────────
+        // ── Frame texture: 320×200 R8Unorm ─────────────────────────────────
+        // R8Unorm is used instead of R8Uint for WebGL2 compatibility:
+        // integer texture sampling (usampler2D) is unreliable in WebGL2 and
+        // returns 0 for every pixel on many browsers.  R8Unorm maps each
+        // palette index byte as float/255.0; the shader recovers the index
+        // with round(sample.r * 255).
         let frame_tex = device.create_texture(&wgpu::TextureDescriptor {
             label:           Some("frame-tex"),
             size:            wgpu::Extent3d { width: RENDER_W, height: RENDER_H, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count:    1,
             dimension:       wgpu::TextureDimension::D2,
-            format:          wgpu::TextureFormat::R8Uint,
+            format:          wgpu::TextureFormat::R8Unorm,
             usage:           wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats:    &[],
         });
@@ -215,12 +220,12 @@ impl Renderer {
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label:   Some("bgl"),
             entries: &[
-                // binding 0: frame_tex (texture_2d<u32>)
+                // binding 0: frame_tex (texture_2d<f32>, R8Unorm — WebGL2-compatible)
                 wgpu::BindGroupLayoutEntry {
                     binding:    0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type:    wgpu::TextureSampleType::Uint,
+                        sample_type:    wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled:   false,
                     },
