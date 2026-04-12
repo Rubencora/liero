@@ -1,1 +1,0 @@
-/Users/rubencordoba/projects/liero/liero/liero-ffi-proof/target/debug/liero-ffi-proof: /Users/rubencordoba/projects/liero/liero/build/libliero_sim.a /Users/rubencordoba/projects/liero/liero/liero-ffi-proof/../src/game/sim_c_api.h /Users/rubencordoba/projects/liero/liero/liero-ffi-proof/build.rs /Users/rubencordoba/projects/liero/liero/liero-ffi-proof/src/main.rs

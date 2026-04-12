@@ -1,5 +1,0 @@
-cargo:rustc-link-search=native=/Users/rubencordoba/projects/liero/liero/build
-cargo:rustc-link-lib=static=liero_sim
-cargo:rustc-link-lib=c++
-cargo:rerun-if-changed=/Users/rubencordoba/projects/liero/liero/build/libliero_sim.a
-cargo:rerun-if-changed=../src/game/sim_c_api.h
