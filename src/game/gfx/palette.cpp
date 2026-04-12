@@ -2,7 +2,7 @@
 
 #include "../settings.hpp"
 #include "../reader.hpp"
-#include "../gfx.hpp"
+#include <algorithm>
 
 void Palette::activate(Color realPal[256])
 {
@@ -81,10 +81,13 @@ void Palette::read(gvl::octet_reader& r)
 	}
 }
 
-int const Palette::wormColourIndexes[2] = {0x58, 0x78}; // TODO: Read from EXE?
+// Worm-highlight colour ramp base indices (6 entries each).
+// Worms 0 and 1 use 0x58/0x78 (original). 2 and 3 use 0x98/0xB8.
+int const Palette::wormColourIndexes[4] = {0x58, 0x78, 0x98, 0xB8};
 
 void Palette::setWormColour(int i, WormSettings const& settings)
 {
+	if (i < 0 || i >= 4) return;
 	int idx = settings.color;
 
 	setWormColoursSpan(idx, settings.rgb);
@@ -103,7 +106,8 @@ void Palette::setWormColour(int i, WormSettings const& settings)
 
 void Palette::setWormColours(Settings const& settings)
 {
-	for(int i = 0; i < 2; ++i)
+	int n = std::min((int)settings.wormSettings.size(), 4);
+	for(int i = 0; i < n; ++i)
 	{
 		setWormColour(i, *settings.wormSettings[i]);
 	}

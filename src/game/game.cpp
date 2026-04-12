@@ -1,4 +1,4 @@
-#include <SDL.h>
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 
@@ -7,10 +7,17 @@
 #include "spectatorviewport.hpp"
 #include "worm.hpp"
 #include "filesystem.hpp"
+#include "constants.hpp"
+#ifndef LIERO_HEADLESS
 #include "gfx/renderer.hpp"
 #include "weapsel.hpp"
-#include "constants.hpp"
-#include "ai/predictive_ai.hpp"
+#endif
+
+int g_poolScale = 1;
+bool g_dumpCrcs = false;
+std::string g_dumpCrcsPath;
+bool g_headless = false;
+std::string g_replayPath;
 
 Game::Game(
 	gvl::shared_ptr<Common> common,
@@ -27,6 +34,12 @@ Game::Game(
 , paused(true)
 , quickSim(false)
 {
+	// Initialize object pools; sizes scale with --pool-scale flag
+	bonuses.init(99 * g_poolScale);
+	wobjects.init(600 * g_poolScale);
+	sobjects.init(700 * g_poolScale);
+	nobjects.init(600 * g_poolScale);
+	bobjects.resize(200 * g_poolScale);
 
 #if ENABLE_TRACING
 	rand.seed(1);
@@ -123,6 +136,7 @@ void Game::processViewports()
 
 }
 
+#ifndef LIERO_HEADLESS
 void Game::drawViewports(Renderer& renderer, GameState state, bool isReplay)
 {
 	for(std::size_t i = 0; i < viewports.size(); ++i)
@@ -138,6 +152,7 @@ void Game::drawSpectatorViewports(Renderer& renderer, GameState state, bool isRe
 		spectatorViewports[i]->draw(*this, renderer, state, isReplay);
 	}
 }
+#endif // LIERO_HEADLESS
 
 
 void Game::clearWorms()
@@ -165,6 +180,7 @@ void Game::addWorm(Worm* worm)
 	worms.push_back(worm);
 }
 
+#ifndef LIERO_HEADLESS
 void Game::draw(Renderer& renderer, GameState state, bool useSpectatorViewports, bool isReplay)
 {
 	if (useSpectatorViewports)
@@ -190,6 +206,7 @@ void Game::draw(Renderer& renderer, GameState state, bool useSpectatorViewports,
 		renderer.pal.lightUp(screenFlash);
 	}
 }
+#endif // LIERO_HEADLESS
 
 bool checkBonusSpawnPosition(Game& game, int x, int y)
 {
@@ -253,6 +270,10 @@ void Game::createBonus()
 					bonus->weapon = rand((uint32_t)common.weapons.size());
 				}
 				while(settings->weapTable[bonus->weapon] == 2);
+			}
+			else
+			{
+				bonus->weapon = 0; // unused for health bonuses; zero to match Rust initialisation
 			}
 
 			common.sobjectTypes[7].create(*this, ix, iy, 0, 0);
@@ -423,6 +444,7 @@ void Game::processFrame()
 	}
 	break;
 
+	case Settings::GMKingOfHill:
 	case Settings::GMHoldazone:
 	{
 		int contenderIdx = -1;
@@ -503,6 +525,74 @@ void Game::processFrame()
 	break;
 	}
 
+	// -------------------------------------------------------------------
+	// Bomb Tag: per-frame bomb timer + proximity transfer
+	// -------------------------------------------------------------------
+	if (settings->gameMode == Settings::GMBombTag)
+	{
+		static const int BOMB_FUSE = 1400; // 20s at 70fps
+		static const int BOMB_PASS_DIST = 10; // pixels
+
+		Worm* carrier = nullptr;
+		for (auto* w : worms)
+			if (w->hasBomb && w->visible) { carrier = w; break; }
+
+		if (carrier)
+		{
+			++carrier->bombTimer;
+
+			// Check proximity: transfer bomb to nearest visible non-carrier worm.
+			for (auto* w : worms)
+			{
+				if (w == carrier || !w->visible) continue;
+				int dx = ftoi(w->pos.x) - ftoi(carrier->pos.x);
+				int dy = ftoi(w->pos.y) - ftoi(carrier->pos.y);
+				if (dx*dx + dy*dy <= BOMB_PASS_DIST * BOMB_PASS_DIST)
+				{
+					// Transfer
+					carrier->hasBomb   = false;
+					carrier->bombTimer = 0;
+					w->hasBomb         = true;
+					w->bombTimer       = 0;
+					carrier = w;
+					break;
+				}
+			}
+
+			// Bomb detonates when timer expires.
+			if (carrier->bombTimer >= BOMB_FUSE)
+			{
+				carrier->bombTimer = 0;
+				doDamageDirect(*carrier, carrier->health + carrier->settings->health, -1);
+
+				// Transfer bomb to nearest living worm (or worm[0]).
+				carrier->hasBomb = false;
+				Worm* next = nullptr;
+				for (auto* w : worms)
+				{
+					if (w != carrier && w->lives > 0)
+					{
+						if (!next) next = w;
+						else
+						{
+							int d1x = ftoi(next->pos.x) - ftoi(carrier->pos.x);
+							int d1y = ftoi(next->pos.y) - ftoi(carrier->pos.y);
+							int d2x = ftoi(w->pos.x)    - ftoi(carrier->pos.x);
+							int d2y = ftoi(w->pos.y)    - ftoi(carrier->pos.y);
+							if (d2x*d2x + d2y*d2y < d1x*d1x + d1y*d1y)
+								next = w;
+						}
+					}
+				}
+				if (next)
+				{
+					next->hasBomb   = true;
+					next->bombTimer = 0;
+				}
+			}
+		}
+	}
+
 	processViewports();
 
 	// Store old control states so we can see what changes (mainly for replays)
@@ -514,6 +604,7 @@ void Game::processFrame()
 	statsRecorder->tick(*this);
 }
 
+#ifndef LIERO_HEADLESS
 void Game::focus(Renderer& renderer)
 {
 	updateSettings(renderer);
@@ -526,10 +617,11 @@ void Game::updateSettings(Renderer& renderer)
 	for(std::size_t i = 0; i < worms.size(); ++i)
 	{
 		Worm& worm = *worms[i];
-		if(worm.index >= 0 && worm.index < 2)
+		if(worm.index >= 0 && worm.index < 4)
 			renderer.origpal.setWormColour(worm.index, *worm.settings);
 	}
 }
+#endif // LIERO_HEADLESS
 
 void Game::spawnZone()
 {
@@ -560,9 +652,45 @@ void Game::startGame()
 	soundPlayer->play(22);
 	bobjects.resize(settings->bloodParticleMax);
 
-	if (settings->gameMode == Settings::GMHoldazone)
+	// Resize stats recorder to match actual worm count.
+	if (statsRecorder)
+	{
+		if (auto* nr = dynamic_cast<NormalStatsRecorder*>(statsRecorder.get()))
+			nr->resizeWorms((int)worms.size());
+	}
+
+	if (settings->gameMode == Settings::GMHoldazone
+	||  settings->gameMode == Settings::GMKingOfHill)
 	{
 		spawnZone();
+	}
+
+	if (settings->gameMode == Settings::GMTeamDeathMatch)
+	{
+		// Assign alternating teams: worm 0,2 = team 1; worm 1,3 = team 2.
+		for (int i = 0; i < (int)worms.size(); ++i)
+			worms[i]->teamId = (i % 2) + 1;
+	}
+
+	if (settings->gameMode == Settings::GMBombTag)
+	{
+		// Give bomb to worm 0 at the start.
+		if (!worms.empty())
+		{
+			worms[0]->hasBomb   = true;
+			worms[0]->bombTimer = 0;
+		}
+	}
+
+	if (settings->gameMode == Settings::GMJuggernaut)
+	{
+		// Worm 0 is the initial Juggernaut.
+		if (!worms.empty())
+		{
+			jugIdx = 0;
+			worms[0]->isJuggernaut = true;
+			worms[0]->health = worms[0]->settings->health * 3;
+		}
 	}
 }
 
@@ -576,6 +704,16 @@ bool Game::isGameOver()
 				return true;
 		}
 	}
+	else if(settings->gameMode == Settings::GMLastManStanding)
+	{
+		int alive = 0;
+		for(std::size_t i = 0; i < worms.size(); ++i)
+		{
+			if(worms[i]->lives > 0)
+				++alive;
+		}
+		return alive <= 1;
+	}
 	else if(settings->gameMode == Settings::GMGameOfTag)
 	{
 		for(std::size_t i = 0; i < worms.size(); ++i)
@@ -584,11 +722,58 @@ bool Game::isGameOver()
 				return true;
 		}
 	}
-	else if(settings->gameMode == Settings::GMHoldazone)
+	else if(settings->gameMode == Settings::GMHoldazone
+	     || settings->gameMode == Settings::GMKingOfHill)
 	{
 		for (auto* w : worms)
 			if (w->timer >= settings->timeToLose)
 				return true;
+	}
+	else if (settings->gameMode == Settings::GMTeamDeathMatch)
+	{
+		// Count living worms per team. Game over when a team is wiped.
+		int alive1 = 0, alive2 = 0;
+		for (auto* w : worms)
+		{
+			if (w->lives > 0)
+			{
+				if (w->teamId == 1) ++alive1;
+				else if (w->teamId == 2) ++alive2;
+			}
+		}
+		if (alive1 == 0 || alive2 == 0)
+			return true;
+	}
+	else if (settings->gameMode == Settings::GMBombTag)
+	{
+		int alive = 0;
+		for (auto* w : worms)
+			if (w->lives > 0) ++alive;
+		return alive <= 1;
+	}
+	else if (settings->gameMode == Settings::GMZombie)
+	{
+		int humans = 0;
+		for (auto* w : worms)
+			if (!w->isZombie) ++humans;
+		return humans <= 1;
+	}
+	else if (settings->gameMode == Settings::GMJuggernaut)
+	{
+		// Game over when Juggernaut's lives <= 0, or all others eliminated.
+		int othersAlive = 0;
+		for (auto* w : worms)
+		{
+			if (w->isJuggernaut)
+			{
+				if (w->lives <= 0) return true;
+			}
+			else if (w->lives > 0)
+			{
+				++othersAlive;
+			}
+		}
+		return othersAlive == 0;
 	}
 
 	return false;
@@ -628,6 +813,25 @@ void Game::doHealingDirect(Worm& w, int amount)
 
 void Game::doDamage(Worm& w, int amount, int byIdx)
 {
+	// Friendly-fire check: suppress damage between team-mates unless enabled.
+	if (!settings->friendlyFire
+	&&  byIdx >= 0 && byIdx != w.index
+	&&  byIdx < (int)worms.size()
+	&&  worms[byIdx]->teamId != 0
+	&&  worms[byIdx]->teamId == w.teamId)
+	{
+		return;
+	}
+
+	// Juggernaut: halve incoming damage; double outgoing damage dealt by juggernaut.
+	if (settings->gameMode == Settings::GMJuggernaut)
+	{
+		if (w.isJuggernaut)
+			amount = std::max(1, amount / 2);
+		else if (byIdx >= 0 && byIdx < (int)worms.size() && worms[byIdx]->isJuggernaut)
+			amount *= 2;
+	}
+
 	doDamageDirect(w, amount, byIdx);
 
 	if (amount > 0)
@@ -742,4 +946,76 @@ void Game::postClone(Game& original, bool complete)
 		w = new Worm(*w);
 	}
 
+}
+
+uint64_t fullGameChecksum(Game& game)
+{
+	// FNV-1a 64-bit over all simulation-relevant state
+	const uint64_t FNV_OFFSET = 14695981039346656037ULL;
+	const uint64_t FNV_PRIME  = 1099511628211ULL;
+	uint64_t h = FNV_OFFSET;
+
+	auto mix = [&](uint32_t v) {
+		h ^= (uint64_t)v;
+		h *= FNV_PRIME;
+	};
+
+	mix((uint32_t)game.rand.x);
+	mix((uint32_t)game.cycles);
+
+	for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+	{
+		auto* w = game.worms[wi];
+		mix((uint32_t)w->pos.x);
+		mix((uint32_t)w->pos.y);
+		mix((uint32_t)w->vel.x);
+		mix((uint32_t)w->vel.y);
+		mix((uint32_t)w->aimingAngle);
+		mix((uint32_t)w->health);
+		mix((uint32_t)w->lives);
+		mix((uint32_t)w->kills);
+		mix((uint32_t)w->timer);
+		mix((uint32_t)w->currentWeapon);
+	}
+
+	{
+		auto wr = game.wobjects.all();
+		WObject* obj;
+		while((obj = wr.next()))
+		{
+			mix((uint32_t)obj->pos.x);
+			mix((uint32_t)obj->pos.y);
+			mix((uint32_t)obj->vel.x);
+			mix((uint32_t)obj->vel.y);
+			mix((uint32_t)obj->timeLeft);
+		}
+	}
+
+	{
+		auto nr = game.nobjects.all();
+		NObject* obj;
+		while((obj = nr.next()))
+		{
+			mix((uint32_t)obj->pos.x);
+			mix((uint32_t)obj->pos.y);
+			mix((uint32_t)obj->vel.x);
+			mix((uint32_t)obj->vel.y);
+			mix((uint32_t)obj->timeLeft);
+		}
+	}
+
+	{
+		auto br = game.bonuses.all();
+		Bonus* obj;
+		while((obj = br.next()))
+		{
+			mix((uint32_t)obj->x);
+			mix((uint32_t)obj->y);
+			mix((uint32_t)obj->velY);
+			mix((uint32_t)obj->frame);
+			mix((uint32_t)obj->weapon);
+		}
+	}
+
+	return h;
 }

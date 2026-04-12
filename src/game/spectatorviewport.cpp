@@ -402,7 +402,7 @@ void SpectatorViewport::draw(Game& game, Renderer& renderer, GameState state, bo
 		{
 			if(i->curFrame == 0)
 			{
-				int nameNum = int(&*i - game.wobjects.arr) % (int)common.weapons.size(); // TODO: Something nicer maybe
+				int nameNum = int(&*i - game.wobjects.data()) % (int)common.weapons.size(); // TODO: Something nicer maybe
 
 				std::string const& name = common.weapons[nameNum].name;
 				int width = int(name.size()) * 4;

@@ -51,6 +51,8 @@ struct ReplayController : CommonController
 	std::unique_ptr<ReplayReader> replay;
 	gvl::shared_ptr<Common> common;
 
+	bool paused_ = false;
+
 };
 
 #endif // LIERO_CONTROLLER_REPLAY_CONTROLLER_HPP

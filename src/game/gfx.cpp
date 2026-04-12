@@ -25,6 +25,7 @@
 #include "controller/replayController.hpp"
 #include "controller/localController.hpp"
 #include "controller/networkController.hpp"
+#include "controller/rollbackController.hpp"
 #include "controller/controller.hpp"
 
 #include "gfx/macros.hpp"
@@ -452,11 +453,14 @@ void Gfx::onWindowResize(Uint32 windowID)
 		}
 		sdlDrawSurface = SDL_CreateRGBSurface(0, doubleRes ? 640 : 320,
 		                         doubleRes ? 400 : 200, 32, 0, 0, 0, 0);
-		// linear for that old-school chunky look, but consider adding a user
-		// option for this
-		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+		// nearest-neighbor for crisp pixels; SDL_RenderSetIntegerScale enforces
+		// exact integer multiples so bilinear would add no value anyway.
+		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 		SDL_RenderSetLogicalSize(sdlRenderer, doubleRes ? 640 : 320,
 		                         doubleRes ? 400 : 200);
+		// Force integer-only scaling: no sub-pixel stretching on ultrawide/4K.
+		// The renderer will center the game with black bars at exact 2x/3x/4x/…
+		SDL_RenderSetIntegerScale(sdlRenderer, SDL_TRUE);
 	}
 	else
 	{
@@ -480,6 +484,7 @@ void Gfx::onWindowResize(Uint32 windowID)
 			sdlSpectatorDrawSurface = SDL_CreateRGBSurface(0, 640, 400, 32, 0,
 			                                               0, 0, 0);
 			SDL_RenderSetLogicalSize(sdlSpectatorRenderer, 640, 400);
+			SDL_RenderSetIntegerScale(sdlSpectatorRenderer, SDL_TRUE);
 		}
 	}
 }
@@ -529,6 +534,7 @@ void Gfx::loadMenus()
 	settingsMenu.addItem(MenuItem(48, 7, "TIME TO WIN", SettingsMenu::SiTimeToWin));
 	settingsMenu.addItem(MenuItem(48, 7, "ZONE TIMEOUT", SettingsMenu::SiZoneTimeout));
 	settingsMenu.addItem(MenuItem(48, 7, "FLAGS TO WIN", SettingsMenu::SiFlagsToWin));
+	settingsMenu.addItem(MenuItem(48, 7, "FRIENDLY FIRE", SettingsMenu::SiFriendlyFire));
 	settingsMenu.addItem(MenuItem(48, 7, "LIVES", SettingsMenu::SiLives));
 	settingsMenu.addItem(MenuItem(48, 7, "LEVEL", SettingsMenu::SiLevel));
 	settingsMenu.addItem(MenuItem(48, 7, "LOADING TIMES", SettingsMenu::SiLoadingTimes));
@@ -551,6 +557,9 @@ void Gfx::loadMenus()
 	mainMenu.addItem(MenuItem::space());
 	mainMenu.addItem(MenuItem(48, 48, "LEFT PLAYER (F5)", MainMenu::MaPlayer1Settings));
 	mainMenu.addItem(MenuItem(48, 48, "RIGHT PLAYER (F6)", MainMenu::MaPlayer2Settings));
+	mainMenu.addItem(MenuItem(48, 48, "PLAYER 3", MainMenu::MaPlayer3Settings));
+	mainMenu.addItem(MenuItem(48, 48, "PLAYER 4", MainMenu::MaPlayer4Settings));
+	mainMenu.addItem(MenuItem(48, 48, "PLAYERS: 2", MainMenu::MaNumPlayers));
 	mainMenu.addItem(MenuItem(48, 48, "MATCH SETUP (F7)", MainMenu::MaSettings));
 
 	settingsMenu.valueOffsetX = 100;
@@ -642,6 +651,11 @@ void Gfx::processEvent(SDL_Event& ev, Controller* controller)
 				dosKeys[dosScan] = true;
 				if(controller)
 					controller->onKey(dosScan, true);
+			}
+
+			if(s == SDL_SCANCODE_F3)
+			{
+				showFpsHud = !showFpsHud;
 			}
 
 			if(s == SDL_SCANCODE_F11)
@@ -913,6 +927,24 @@ void Gfx::draw(SDL_Surface& surface, SDL_Texture& texture, SDL_Renderer& sdlRend
 
 void Gfx::flip()
 {
+	// FPS tracking: measure time between flips
+	{
+		Uint32 now = SDL_GetTicks();
+		if (fpsLastFlipTime != 0)
+		{
+			Uint32 delta = now - fpsLastFlipTime;
+			fpsAccumMs += delta;
+			++fpsFrameCount;
+			if (fpsAccumMs >= 500) // update display every half second
+			{
+				displayFps = (int)(fpsFrameCount * 1000u / fpsAccumMs);
+				fpsFrameCount = 0;
+				fpsAccumMs = 0;
+			}
+		}
+		fpsLastFlipTime = now;
+	}
+
 	// draw into the play window. This uses either the normal split screen renderer
 	// or the single screen renderer if this is a replay and single screen replay
 	// is turned on
@@ -1151,6 +1183,8 @@ ItemBehavior* SettingsMenu::getItemBehavior(Common& common, MenuItem& item)
 			return new TimeBehavior(common, gfx.settings->zoneTimeout, 10, 3600, 10);
 		case SiFlagsToWin:
 			return new IntegerBehavior(common, gfx.settings->flagsToWin, 1, 999, 1);
+		case SiFriendlyFire:
+			return new BooleanSwitchBehavior(common, gfx.settings->friendlyFire);
 
 		case SiLevel:
 			return new LevelSelectBehavior(common);
@@ -1177,11 +1211,16 @@ void SettingsMenu::onUpdate()
 	setVisibility(SiTimeToWin, false);
 	setVisibility(SiZoneTimeout, false);
 	setVisibility(SiFlagsToWin, false);
+	setVisibility(SiFriendlyFire, false);
 
 	switch(gfx.settings->gameMode)
 	{
 		case Settings::GMKillEmAll:
 		case Settings::GMScalesOfJustice:
+		case Settings::GMLastManStanding:
+		case Settings::GMBombTag:
+		case Settings::GMZombie:
+		case Settings::GMJuggernaut:
 			setVisibility(SiLives, true);
 		break;
 
@@ -1190,8 +1229,14 @@ void SettingsMenu::onUpdate()
 		break;
 
 		case Settings::GMHoldazone:
+		case Settings::GMKingOfHill:
 			setVisibility(SiTimeToWin, true);
 			setVisibility(SiZoneTimeout, true);
+		break;
+
+		case Settings::GMTeamDeathMatch:
+			setVisibility(SiLives, true);
+			setVisibility(SiFriendlyFire, true);
 		break;
 	}
 }
@@ -1602,7 +1647,7 @@ void Gfx::weaponOptions()
 		{
 			int count = 0;
 
-			for(int i = 0; i < 40; ++i)
+			for(int i = 0; i < (int)common.weapons.size(); ++i)
 			{
 				if(settings->weapTable[i] == 0)
 					++count;
@@ -1825,6 +1870,8 @@ ItemBehavior* PlayerMenu::getItemBehavior(Common& common, MenuItem& item)
 
 void Gfx::playerSettings(int player)
 {
+	// Ensure the worm slot exists before entering its settings.
+	settings->ensureWormCount(player + 1);
 	playerMenu.ws = settings->wormSettings[player];
 
 	playerMenu.updateItems(*common);
@@ -1839,20 +1886,47 @@ void Gfx::mainLoop()
 restart:
 	if(networkMode)
 	{
-		NetworkController* netCtrl = nullptr;
-		if(networkIsHost)
-			netCtrl = NetworkController::createHost(networkPort, common, settings);
-		else
-			netCtrl = NetworkController::createClient(networkHost, networkPort, common, settings);
-
-		if(!netCtrl)
+		if(networkUdp)
 		{
-			fprintf(stderr, "[net] Failed to establish network connection\n");
-			SDL_Quit();
-			return;
+			// UDP rollback netcode (Sprint 5)
+			RollbackController* rbCtrl = nullptr;
+			if(networkIsHost)
+				rbCtrl = RollbackController::createHost(networkPort, common, settings);
+			else
+				rbCtrl = RollbackController::createClient(networkHost, networkPort, common, settings);
+
+			if(!rbCtrl)
+			{
+				fprintf(stderr, "[net] Failed to establish UDP rollback connection\n");
+				SDL_Quit();
+				return;
+			}
+			controller.reset(rbCtrl);
 		}
-		controller.reset(netCtrl);
+		else
+		{
+			// Legacy TCP lockstep
+			NetworkController* netCtrl = nullptr;
+			if(networkIsHost)
+				netCtrl = NetworkController::createHost(networkPort, common, settings);
+			else
+				netCtrl = NetworkController::createClient(networkHost, networkPort, common, settings);
+
+			if(!netCtrl)
+			{
+				fprintf(stderr, "[net] Failed to establish TCP connection\n");
+				SDL_Quit();
+				return;
+			}
+			controller.reset(netCtrl);
+		}
 		networkMode = false; // one session only
+	}
+	else if (!g_replayPath.empty())
+	{
+		FsNode replayNode(g_replayPath);
+		controller.reset(new ReplayController(common, replayNode.toSource()));
+		g_replayPath.clear(); // only use once
 	}
 	else
 	{
@@ -1940,6 +2014,18 @@ restart:
 			controller->draw(this->singleScreenRenderer, true);
 
 			++gfx.menuCycles;
+
+			// FPS / ping HUD overlay (F3 to toggle)
+			if(showFpsHud && common)
+			{
+				std::string fpsStr = "FPS:" + toString(displayFps);
+				common->font.drawText(primaryRenderer->bmp, fpsStr, 2, 2, 10);
+				if(displayPing >= 0)
+				{
+					std::string pingStr = "PING:" + toString(displayPing) + "MS";
+					common->font.drawText(primaryRenderer->bmp, pingStr, 2, 10, 10);
+				}
+			}
 
 			flip();
 			process(controller.get());
@@ -2066,6 +2152,15 @@ int Gfx::menuLoop()
 		startItemId = MainMenu::MaNewGame;
 	}
 
+	// Sync PLAYERS label and Player 3/4 visibility with current settings.
+	{
+		char buf[32];
+		std::snprintf(buf, sizeof(buf), "PLAYERS: %d", settings->numPlayers);
+		mainMenu.itemFromId(MainMenu::MaNumPlayers)->string = buf;
+		mainMenu.setVisibility(MainMenu::MaPlayer3Settings, settings->numPlayers >= 3);
+		mainMenu.setVisibility(MainMenu::MaPlayer4Settings, settings->numPlayers >= 4);
+	}
+
 	mainMenu.moveToFirstVisible();
 	settingsMenu.moveToFirstVisible();
 	settingsMenu.updateItems(common);
@@ -2132,8 +2227,29 @@ int Gfx::menuLoop()
 
 					case MainMenu::MaPlayer1Settings:
 					case MainMenu::MaPlayer2Settings:
+					case MainMenu::MaPlayer3Settings:
+					case MainMenu::MaPlayer4Settings:
 					{
 						playerSettings(s - MainMenu::MaPlayer1Settings);
+						break;
+					}
+
+					case MainMenu::MaNumPlayers:
+					{
+						// Cycle 2 → 3 → 4 → 2
+						int n = settings->numPlayers;
+						n = (n >= 4) ? 2 : n + 1;
+						settings->numPlayers = n;
+						settings->ensureWormCount(n);
+
+						// Update menu label
+						char buf[32];
+						std::snprintf(buf, sizeof(buf), "PLAYERS: %d", n);
+						mainMenu.itemFromId(MainMenu::MaNumPlayers)->string = buf;
+
+						// Show/hide Player 3 and Player 4 entries
+						mainMenu.setVisibility(MainMenu::MaPlayer3Settings, n >= 3);
+						mainMenu.setVisibility(MainMenu::MaPlayer4Settings, n >= 4);
 						break;
 					}
 

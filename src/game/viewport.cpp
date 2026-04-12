@@ -93,19 +93,26 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 	int multiplier = renderer.renderResX / 320;
 	int centerX = renderer.renderResX / 2;
 
+	// Scale bars to fit all worm HUDs within the 320px canvas:
+	//   2-3 players → 100px bar,  4 players → 75px bar.
+	// Colors are computed from the 0-100 health/ammo percentage so
+	// the gradient is correct regardless of bar width.
+	int const barMaxWidth = (game.worms.size() <= 3) ? 100 : 75;
+
 	if(worm.visible)
 	{
-		int lifebarWidth = worm.health * 100 / worm.settings->health;
-		drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 39, lifebarWidth, lifebarWidth / 10 + 234);
+		int lifePct  = worm.health * 100 / worm.settings->health;
+		int lifebarWidth = lifePct * barMaxWidth / 100;
+		drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 39, lifebarWidth, lifePct / 10 + 234);
 	}
 	else
 	{
-		int lifebarWidth = 100 - (worm.killedTimer * 25) / 37;
-		if(lifebarWidth > 0)
+		int lifePct      = 100 - (worm.killedTimer * 25) / 37;
+		if(lifePct > 0)
 		{
-			if(lifebarWidth > 100)
-				lifebarWidth = 100;
-			drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 39, lifebarWidth, lifebarWidth / 10 + 234);
+			if(lifePct > 100) lifePct = 100;
+			int lifebarWidth = lifePct * barMaxWidth / 100;
+			drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 39, lifebarWidth, lifePct / 10 + 234);
 		}
 	}
 
@@ -117,28 +124,30 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 	{
 		if(ww.ammo > 0)
 		{
-			int ammoBarWidth = ww.ammo * 100 / ww.type->ammo;
+			int ammoPct      = ww.ammo * 100 / ww.type->ammo;
+			int ammoBarWidth = ammoPct * barMaxWidth / 100;
 
 			if(ammoBarWidth > 0)
-				drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 34, ammoBarWidth, ammoBarWidth / 10 + 245);
+				drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 34, ammoBarWidth, ammoPct / 10 + 245);
 		}
 	}
 	else
 	{
-		int ammoBarWidth = 0;
+		int ammoPct = 0;
 
 		if(ww.type->loadingTime != 0)
 		{
 			int computedLoadingTime = ww.type->computedLoadingTime(*game.settings);
-			ammoBarWidth = 100 - ww.loadingLeft * 100 / computedLoadingTime;
+			ammoPct = 100 - ww.loadingLeft * 100 / computedLoadingTime;
 		}
 		else
 		{
-			ammoBarWidth = 100 - ww.loadingLeft * 100;
+			ammoPct = 100 - ww.loadingLeft * 100;
 		}
 
+		int ammoBarWidth = ammoPct * barMaxWidth / 100;
 		if(ammoBarWidth > 0)
-			drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 34, ammoBarWidth, ammoBarWidth / 10 + 245);
+			drawBar(renderer.bmp, worm.statsX * multiplier, renderer.renderResY - 34, ammoBarWidth, ammoPct / 10 + 245);
 
 		if((game.cycles % 20) > 10
 		&& worm.visible)
@@ -163,6 +172,7 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 	{
 	case Settings::GMKillEmAll:
 	case Settings::GMScalesOfJustice:
+	case Settings::GMLastManStanding:
 	{
 		common.font.drawText(renderer.bmp, (LS(Lives) + toString(worm.lives)), worm.statsX * multiplier, renderer.renderResY - 22, 6);
 	}
@@ -251,7 +261,7 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 				int tempX = ftoi(worm.pos.x) - 7 + offs.x;
 				int tempY = ftoi(worm.pos.y) - 5 + offs.y;
 
-				blitImageTrans(renderer.bmp, common.wormSpriteObj(worm.currentFrame, worm.direction, worm.index), tempX, tempY, game.cycles);
+				blitImageTrans(renderer.bmp, common.wormSpriteObj(worm.currentFrame, worm.direction, worm.index & 3), tempX, tempY, game.cycles);
 			}
 		}
 
@@ -432,7 +442,7 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 			{
 				if(i->curFrame == 0)
 				{
-					int nameNum = int(&*i - game.wobjects.arr) % (int)common.weapons.size(); // TODO: Something nicer maybe
+					int nameNum = int(&*i - game.wobjects.data()) % (int)common.weapons.size(); // TODO: Something nicer maybe
 
 					std::string const& name = common.weapons[nameNum].name;
 					int width = int(name.size()) * 4;
@@ -557,9 +567,9 @@ void Viewport::draw(Game& game, Renderer& renderer, GameState state, bool isRepl
 				}
 
 
-				blitImage(renderer.bmp, common.wormSpriteObj(w.currentFrame, w.direction, w.index), tempX, tempY);
+				blitImage(renderer.bmp, common.wormSpriteObj(w.currentFrame, w.direction, w.index & 3), tempX, tempY);
 				if(game.settings->shadow)
-					blitShadowImage(common, renderer.bmp, common.wormSprite(w.currentFrame, w.direction, w.index), tempX - 3, tempY + 3, 16, 16);
+					blitShadowImage(common, renderer.bmp, common.wormSprite(w.currentFrame, w.direction, w.index & 3), tempX - 3, tempY + 3, 16, 16);
 			}
 
 			if (w.ai)

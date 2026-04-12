@@ -1,0 +1,17 @@
+[package]
+name        = "replay-diff"
+version.workspace = true
+edition.workspace = true
+description = "Frame-accurate checksum diff: C++ libliero_sim vs Rust liero-sim."
+
+[[bin]]
+name = "replay-diff"
+path = "src/main.rs"
+
+[dependencies]
+liero-data = { workspace = true }
+liero-sim  = { workspace = true }
+anyhow     = { workspace = true }
+
+[build-dependencies]
+# Nothing — build.rs uses std only.

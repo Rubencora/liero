@@ -2,8 +2,10 @@
 #include "game.hpp"
 #include "mixer/player.hpp"
 #include "math.hpp"
-#include "gfx/renderer.hpp"
+#include "gfx/blit.hpp"
 #include "constants.hpp"
+#include <algorithm>
+#include <climits>
 
 int Weapon::computedLoadingTime(Settings& settings) const
 {
@@ -27,8 +29,8 @@ void Weapon::fire(Game& game, int angle, fixedvec vel, int speed, fixedvec pos, 
 	obj->hasHit = false;
 
 	LTRACE(rand, 0, wobj, game.rand.x);
-	LTRACE(fire, obj - game.wobjects.arr, cxpo, pos.x);
-	LTRACE(fire, obj - game.wobjects.arr, cypo, pos.y);
+	LTRACE(fire, obj - game.wobjects.data(), cxpo, pos.x);
+	LTRACE(fire, obj - game.wobjects.data(), cypo, pos.y);
 
 	Worm* owner = game.wormByIdx(ownerIdx);
 	game.statsRecorder->damagePotential(owner, ww, hitDamage);
@@ -68,7 +70,7 @@ void Weapon::fire(Game& game, int angle, fixedvec vel, int speed, fixedvec pos, 
 				curFrame = 12;
 			obj->curFrame = curFrame;
 		}
-		else if(shotType == STDType2 || shotType == STSteerable)
+		else if(shotType == STDType2 || shotType == STSteerable || shotType == STHoming)
 		{
 			obj->curFrame = angle;
 		}
@@ -144,7 +146,14 @@ void WObject::blowUpObject(Game& game, int causeIdx)
 		}
 	}
 
-	if(w.dirtEffect >= 0)
+	if(w.dirtDeposit)
+	{
+		int ix = ftoi(x), iy = ftoi(y);
+		drawDirtDeposit(common, game.level, ix - 8, iy - 12, 16, 24);
+		if(game.settings->shadow)
+			correctShadow(common, game.level, gvl::rect(ix - 12, iy - 16, ix + 13, iy + 13));
+	}
+	else if(w.dirtEffect >= 0)
 	{
 		int ix = ftoi(x), iy = ftoi(y);
 		drawDirtEffect(common, game.rand, game.level, w.dirtEffect, ftoi(x) - 7, ftoi(y) - 7);
@@ -206,7 +215,84 @@ void WObject::process(Game& game)
 				vel.y += game.rand(w.distribution * 2) - w.distribution;
 			}
 		}
+		else if(w.shotType == Weapon::STHoming && w.homingStrength > 0)
+		{
+			// Find nearest visible enemy worm
+			Worm* target = nullptr;
+			int minDist2 = INT_MAX;
+			for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+			{
+				Worm* cand = game.worms[wi];
+				if((int)wi == ownerIdx || !cand->visible) continue;
+				int dx = ftoi(cand->pos.x) - ftoi(pos.x);
+				int dy = ftoi(cand->pos.y) - ftoi(pos.y);
+				int d2 = dx*dx + dy*dy;
+				if(d2 < minDist2) { minDist2 = d2; target = cand; }
+			}
 
+			if(target)
+			{
+				int tx = ftoi(target->pos.x) - ftoi(pos.x);
+				int ty = ftoi(target->pos.y) - ftoi(pos.y);
+				// Cross product of vel and target direction (sign tells steer direction)
+				long long cross = (long long)vel.x * ty - (long long)vel.y * tx;
+				for(int step = 0; step < w.homingStrength; ++step)
+				{
+					if(cross < 0)
+						curFrame = (curFrame + 1) & 127;
+					else if(cross > 0)
+						curFrame = (curFrame + 127) & 127;
+				}
+				// Set velocity from new angle
+				vel = cossinTable[curFrame] * w.speed / 100;
+			}
+		}
+
+		// Magnet: attract nearby wobjects, nobjects, and worms toward this projectile.
+		// Pull = attractForce/1000 pixels/frame (constant direction, not distance-scaled).
+		if(w.attractRadius > 0 && w.attractForce > 0)
+		{
+			auto wr = game.wobjects.all();
+			for(WObject* i; (i = wr.next()); )
+			{
+				if(i == this) continue;
+				int dx = ftoi(pos.x) - ftoi(i->pos.x);
+				int dy = ftoi(pos.y) - ftoi(i->pos.y);
+				int dist = vectorLength(dx, dy);
+				if(dist > 0 && dist < w.attractRadius)
+				{
+					i->vel.x += (fixed)((long long)itof(dx) * w.attractForce / (1000 * dist));
+					i->vel.y += (fixed)((long long)itof(dy) * w.attractForce / (1000 * dist));
+				}
+			}
+
+			auto nr = game.nobjects.all();
+			for(NObject* i; (i = nr.next()); )
+			{
+				int dx = ftoi(pos.x) - ftoi(i->pos.x);
+				int dy = ftoi(pos.y) - ftoi(i->pos.y);
+				int dist = vectorLength(dx, dy);
+				if(dist > 0 && dist < w.attractRadius)
+				{
+					i->vel.x += (fixed)((long long)itof(dx) * w.attractForce / (1000 * dist));
+					i->vel.y += (fixed)((long long)itof(dy) * w.attractForce / (1000 * dist));
+				}
+			}
+
+			for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+			{
+				Worm* wm = game.worms[wi];
+				if(!wm->visible) continue;
+				int dx = ftoi(pos.x) - ftoi(wm->pos.x);
+				int dy = ftoi(pos.y) - ftoi(wm->pos.y);
+				int dist = vectorLength(dx, dy);
+				if(dist > 0 && dist < w.attractRadius)
+				{
+					wm->vel.x += (fixed)((long long)itof(dx) * w.attractForce / (1000 * dist));
+					wm->vel.y += (fixed)((long long)itof(dy) * w.attractForce / (1000 * dist));
+				}
+			}
+		}
 
 		if(w.bounce > 0)
 		{
@@ -321,7 +407,11 @@ void WObject::process(Game& game)
 		if(!game.level.inside(inewPos)
 		|| game.pixelMat(inewPos.x, inewPos.y).dirtRock())
 		{
-			if(w.bounce == 0)
+			if(w.pierceDirt && game.level.inside(inewPos))
+			{
+				// Pass through terrain — do nothing
+			}
+			else if(w.bounce == 0)
 			{
 				if(w.explGround)
 				{
@@ -366,7 +456,17 @@ void WObject::process(Game& game)
 		if(w.timeToExplo > 0)
 		{
 			if(--timeLeft < 0)
+			{
+				if(w.onExpireTeleport && owner && owner->visible)
+				{
+					// Teleport owner worm to projectile position
+					owner->pos = pos;
+					owner->vel = fixedvec();
+					game.wobjects.free(this);
+					return;
+				}
 				doExplode = true;
+			}
 		}
 
 		for(std::size_t i = 0; i < game.worms.size(); ++i)
@@ -400,6 +500,33 @@ void WObject::process(Game& game)
 					if(!game.soundPlayer->isPlaying(&worm))
 					{
 						game.soundPlayer->play(snd, &worm);
+					}
+				}
+
+				// Chain Lightning: jump to nearest other worm within 80px
+				if(w.chainLightningJumps > 0 && w.hitDamage > 0)
+				{
+					int jumpsLeft = w.chainLightningJumps;
+					int curDmg = w.hitDamage;
+					Worm* lastHit = &worm;
+					while(jumpsLeft > 0)
+					{
+						curDmg = std::max(1, curDmg / 2);
+						Worm* nextTarget = nullptr;
+						int minD2 = 80*80;
+						for(std::size_t ji = 0; ji < game.worms.size(); ++ji)
+						{
+							Worm* cand = game.worms[ji];
+							if(cand == lastHit || !cand->visible) continue;
+							int cdx = ftoi(cand->pos.x) - ftoi(lastHit->pos.x);
+							int cdy = ftoi(cand->pos.y) - ftoi(lastHit->pos.y);
+							int cd2 = cdx*cdx + cdy*cdy;
+							if(cd2 < minD2) { minD2 = cd2; nextTarget = cand; }
+						}
+						if(!nextTarget) break;
+						game.doDamage(*nextTarget, curDmg, ownerIdx);
+						lastHit = nextTarget;
+						--jumpsLeft;
 					}
 				}
 

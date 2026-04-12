@@ -235,7 +235,8 @@ enum type
 	t_null,
 	t_bool,
 	t_integer,
-	t_string,
+	t_missing, // Key not present in the TOML map (distinct from explicit null; not ref-counted)
+	t_string,  // NOTE: all types >= t_string are ref-counted (shared ptr in u.s)
 	t_object,
 	t_array
 };
@@ -501,6 +502,11 @@ struct reader
 			{
 				// Empty line
 			}
+			else if (c == 0)
+			{
+				// Trailing newline at EOF — done parsing
+				break;
+			}
 			else
 			{
 				auto name(dotted());
@@ -573,7 +579,15 @@ struct reader
 		{
 			if (cur.tt != t_object)
 				throw parse_error();
-			return ((object*)cur.u.s)->f.at(name);
+			auto& map = ((object*)cur.u.s)->f;
+			auto it = map.find(name);
+			if (it == map.end())
+			{
+				value missing;
+				missing.tt = t_missing; // Key absent from TOML — distinct from explicit null
+				return missing;
+			}
+			return it->second;
 		}
 		else
 		{
@@ -622,6 +636,7 @@ struct reader
 	reader& i32(char const* name, int32_t& v)
 	{
 		value jv(f(name));
+		if (jv.tt == t_missing) return *this; // absent key: keep struct default
 		if (jv.tt != t_integer) throw parse_error();
 		v = jv.u.i;
 		return *this;
@@ -630,6 +645,7 @@ struct reader
 	reader& u32(char const* name, uint32_t& v)
 	{
 		value jv(f(name));
+		if (jv.tt == t_missing) return *this; // absent key: keep struct default
 		if (jv.tt != t_integer) throw parse_error();
 		v = (uint32_t)jv.u.i;
 		return *this;
@@ -638,6 +654,7 @@ struct reader
 	reader& b(char const* name, bool& v)
 	{
 		value jv(f(name));
+		if (jv.tt == t_missing) return *this; // absent key: keep struct default
 		if (jv.tt != t_bool) throw parse_error();
 		v = jv.u.i != 0;
 		return *this;
@@ -647,9 +664,13 @@ struct reader
 	reader& ref(char const* name, T& v, Resolver resolver)
 	{
 		value jv(f(name));
-		if (jv.tt == t_null)
+		if (jv.tt == t_missing)
 		{
-			resolver.r2v(v);
+			return *this; // absent key: keep struct default
+		}
+		else if (jv.tt == t_null)
+		{
+			resolver.r2v(v); // explicit null → resolver sets sentinel (-1)
 		}
 		else
 		{
@@ -662,6 +683,7 @@ struct reader
 	reader& str(char const* name, std::string& s)
 	{
 		value jv(f(name));
+		if (jv.tt == t_missing) return *this; // absent key: keep struct default
 		if (jv.tt != t_string) throw parse_error();
 		s = ((string*)jv.u.s)->s;
 		return *this;

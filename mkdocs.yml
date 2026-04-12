@@ -1,0 +1,68 @@
+site_name: OpenLiero
+site_description: "OpenLiero — Liero reimplemented in Rust with online multiplayer and modding support"
+site_url: https://openliero.github.io/openliero
+repo_url: https://github.com/openliero/openliero
+repo_name: openliero/openliero
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent:  purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent:  purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Building from source: getting-started/building.md
+    - Running: getting-started/running.md
+    - Controls: getting-started/controls.md
+  - TC Format:
+    - Overview: tc-format/overview.md
+    - tc.cfg: tc-format/tc-cfg.md
+    - Weapons: tc-format/weapons.md
+    - NObjects: tc-format/nobjects.md
+    - SObjects: tc-format/sobjects.md
+    - Sprites: tc-format/sprites.md
+    - Sounds: tc-format/sounds.md
+  - Modding:
+    - Overview: modding/overview.md
+    - Lua API: modding/lua-api.md
+    - Examples: modding/examples.md
+  - Online Multiplayer:
+    - Protocol: net/protocol.md
+    - Relay Server: net/relay.md
+  - Architecture:
+    - Crates: architecture/crates.md
+    - Simulation / Render coupling: architecture/sim-gfx-coupling.md
+  - Tools:
+    - tc-validator: tools/tc-validator.md
+    - replay-diff: tools/replay-diff.md

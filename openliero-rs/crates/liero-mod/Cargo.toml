@@ -1,0 +1,13 @@
+[package]
+name        = "liero-mod"
+description = "Lua 5.4 modding layer for OpenLiero — apply mod.lua scripts to TC data"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+liero-data = { workspace = true }
+anyhow     = { workspace = true }
+mlua       = { version = "0.10", features = ["lua54", "vendored"] }

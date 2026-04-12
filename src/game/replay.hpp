@@ -97,4 +97,8 @@ struct ReplayReader : Replay
 	gvl::octet_reader reader;
 };
 
+struct Game;
+// Note: fullGameChecksum is declared in game.hpp to avoid requiring replay.hpp
+// in the headless sim library.
+
 #endif // UUID_4CF92C398C724F883A02E8A68FE1584F

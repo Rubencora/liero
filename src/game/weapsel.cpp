@@ -22,7 +22,7 @@ WeaponSelection::WeaponSelection(Game& game)
 {
 	Common& common = *game.common;
 
-	for(int i = 0; i < 40; ++i)
+	for(int i = 0; i < (int)common.weapons.size(); ++i)
 	{
 		if(game.settings->weapTable[i] == 0)
 			++enabledWeaps;
@@ -51,7 +51,7 @@ WeaponSelection::WeaponSelection(Game& game)
 		{
 			if(ws.weapons[j] == 0 || randomWeapons)
 			{
-				ws.weapons[j] = gfx.rand(1, 41);
+				ws.weapons[j] = gfx.rand(1, (int)common.weapOrder.size() + 1);
 			}
 
 			bool enoughWeapons = (enabledWeaps >= Settings::selectableWeapons);
@@ -60,7 +60,7 @@ WeaponSelection::WeaponSelection(Game& game)
 			{
 				while (true)
 				{
-					ws.weapons[j] = gfx.rand(1, 41);
+					ws.weapons[j] = gfx.rand(1, (int)common.weapOrder.size() + 1);
 
 					int w = common.weapOrder[ws.weapons[j] - 1];
 
@@ -191,6 +191,7 @@ void WeaponSelection::drawNormalViewports(Renderer& renderer, GameState state)
 		if(!isReady[i])
 		{
 			menus[i].draw(common, gfx.playRenderer, false);
+			common.font.drawText(renderer.bmp, "1-0:LOAD PRESET", weaponMenu.x - 10, weaponMenu.y + 64, 7);
 		}
 	}
 
@@ -217,6 +218,49 @@ bool WeaponSelection::processFrame()
 	Common& common = *game.common;
 
 	bool allReady = true;
+
+	// Check for number keys 1-9 and 0 to load presets
+	static const SDL_Scancode slotKeys[10] = {
+		SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5,
+		SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0
+	};
+
+	for(std::size_t i = 0; i < menus.size(); ++i)
+	{
+		Viewport& vp = *game.viewports[i];
+		Worm& worm = *game.wormByIdx(vp.wormIdx);
+		WormSettings& ws = *worm.settings;
+
+		if(!isReady[i])
+		{
+			for(int slotIdx = 0; slotIdx < WormSettings::NumLoadouts; ++slotIdx)
+			{
+				if(gfx.testSDLKeyOnce(slotKeys[slotIdx]))
+				{
+					if(ws.savedLoadouts[slotIdx][0] != 0)
+					{
+						// Copy saved loadout into current weapons
+						for(int w = 0; w < 5; ++w)
+						{
+							ws.weapons[w] = ws.savedLoadouts[slotIdx][w];
+						}
+
+						// Update menu item strings to match loaded weapons
+						for(int j = 0; j < Settings::selectableWeapons; ++j)
+						{
+							int w = common.weapOrder[ws.weapons[j] - 1];
+							worm.weapons[j].type = &common.weapons[w];
+							menus[i].items[j + 1].string = common.weapons[w].name;
+						}
+
+						// Play sound
+						game.soundPlayer->play(28);
+					}
+					break;
+				}
+			}
+		}
+	}
 
 	for(std::size_t i = 0; i < menus.size(); ++i)
 	{
@@ -303,7 +347,7 @@ bool WeaponSelection::processFrame()
 					{
 						while(true)
 						{
-							ws.weapons[j] = gfx.rand(1, 41);
+							ws.weapons[j] = gfx.rand(1, (int)common.weapOrder.size() + 1);
 
 							int w = common.weapOrder[ws.weapons[j] - 1];
 
@@ -324,6 +368,10 @@ bool WeaponSelection::processFrame()
 				else if(menus[i].selection() == 6) // TODO: Unhardcode
 				{
 					game.soundPlayer->play(27);
+					// Rotate loadout history and save current as most-recent (slot 0)
+					for (int s = WormSettings::NumLoadouts - 1; s > 0; --s)
+						std::memcpy(ws.savedLoadouts[s], ws.savedLoadouts[s-1], sizeof(ws.savedLoadouts[0]));
+					std::memcpy(ws.savedLoadouts[0], ws.weapons, sizeof(ws.weapons));
 					isReady[i] = true;
 				}
 			}

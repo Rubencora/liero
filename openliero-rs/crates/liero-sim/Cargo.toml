@@ -1,0 +1,13 @@
+[package]
+name        = "liero-sim"
+description = "Deterministic fixed-point simulation core (no I/O, no renderer)"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+liero-data = { workspace = true }
+anyhow     = { workspace = true }
+thiserror  = { workspace = true }

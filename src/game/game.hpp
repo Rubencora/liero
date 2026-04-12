@@ -20,7 +20,9 @@
 struct SpectatorViewport;
 struct Viewport;
 struct Worm;
+#ifndef LIERO_HEADLESS
 struct Renderer;
+#endif
 
 typedef enum {
 	StateInitial,
@@ -59,8 +61,10 @@ struct Game
 	Worm* findControlForKey(uint32_t key, Worm::Control& control);
 	void releaseControls();
 	void processFrame();
+#ifndef LIERO_HEADLESS
 	void focus(Renderer& renderer);
 	void updateSettings(Renderer& renderer);
+#endif
 
 	void createBObject(fixedvec pos, fixedvec vel);
 	void createBonus();
@@ -69,12 +73,16 @@ struct Game
 	void addViewport(Viewport*);
 	void addSpectatorViewport(SpectatorViewport*);
 	void processViewports();
+#ifndef LIERO_HEADLESS
 	void drawViewports(Renderer& renderer, GameState state, bool isReplay = false);
 	void drawSpectatorViewports(Renderer& renderer, GameState state, bool isReplay = false);
+#endif
 	void clearWorms();
 	void addWorm(Worm*);
 	void resetWorms();
+#ifndef LIERO_HEADLESS
 	void draw(Renderer& renderer, GameState state, bool useSpectatorViewports, bool isReplay = false);
+#endif
 	void startGame();
 	bool isGameOver();
 	void doDamageDirect(Worm& w, int amount, int byIdx);
@@ -111,15 +119,16 @@ struct Game
 	Rand rand;
 
 	Holdazone holdazone;
+	int jugIdx = -1; // GMJuggernaut: index of the current Juggernaut worm
 
 	std::vector<Viewport*> viewports;
 	std::vector<SpectatorViewport*> spectatorViewports;
 	std::vector<Worm*> worms;
 
-	typedef ExactObjectList<Bonus, 99> BonusList;
-	typedef ExactObjectList<WObject, 600> WObjectList;
-	typedef ExactObjectList<SObject, 700> SObjectList;
-	typedef ExactObjectList<NObject, 600> NObjectList;
+	typedef ExactObjectList<Bonus> BonusList;
+	typedef ExactObjectList<WObject> WObjectList;
+	typedef ExactObjectList<SObject> SObjectList;
+	typedef ExactObjectList<NObject> NObjectList;
 	typedef FastObjectList<BObject> BObjectList;
 	BonusList bonuses;
 	WObjectList wobjects;
@@ -131,6 +140,18 @@ struct Game
 };
 
 bool checkRespawnPosition(Game& game, int x2, int y2, int oldX, int oldY, int x, int y);
+
+// 64-bit FNV-1a checksum covering all simulation state (worms, wobjects, nobjects, bonuses, rand, cycles)
+uint64_t fullGameChecksum(Game& game);
+
+// Pool scale factor — set before creating any Game (via --pool-scale N flag)
+extern int g_poolScale;
+
+// CRC dump flags (set via --dump-crcs / --debug-desync CLI flags)
+extern bool g_dumpCrcs;
+extern std::string g_dumpCrcsPath;
+extern bool g_headless;
+extern std::string g_replayPath; // set via --replay <file> to start directly in replay mode
 
 #endif // LIERO_GAME_HPP
 

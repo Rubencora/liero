@@ -3,61 +3,19 @@
 
 #include <cstddef>
 #include <cassert>
-#include <gvl/support/bits.hpp>
+#include <vector>
 #include <cstring>
+#include <algorithm>
+#include <gvl/support/bits.hpp>
 
 struct ExactObjectListBase
 {
 	bool used;
 };
 
-template<typename T, int Limit>
+template<typename T>
 struct ExactObjectList
 {
-#if 0
-	struct iterator
-	{
-		iterator(T* cur_)
-		: cur(cur_)
-		{
-			while(!cur->used)
-			{
-				++cur;
-			}
-		}
-
-		iterator& operator++()
-		{
-			do
-			{
-				++cur;
-			}
-			while(!cur->used);
-
-			return *this;
-		}
-
-		T& operator*()
-		{
-			assert(cur->used);
-			return *cur;
-		}
-
-		T* operator->()
-		{
-			assert(cur->used);
-			return cur;
-		}
-
-		bool operator!=(iterator b)
-		{
-			return cur != b.cur;
-		}
-
-		T* cur;
-	};
-#endif
-
 	struct range
 	{
 		range(T* cur, T* end)
@@ -81,29 +39,37 @@ struct ExactObjectList
 	};
 
 	ExactObjectList()
+	: limit_(0), count_(0)
 	{
+	}
+
+	void init(int limit)
+	{
+		limit_ = limit;
+		arr_.resize(limit + 1); // +1 for sentinel
+		freeList_.resize((limit + 31) / 32);
 		clear();
 	}
 
 	T* getFreeObject()
 	{
-		assert(count < Limit);
-		++count;
+		assert(count_ < (std::size_t)limit_);
+		++count_;
 
 		T* ptr = 0;
-		for (uint32_t i = 0; i < FreeListSize; ++i)
+		for (int i = 0; i < (int)freeList_.size(); ++i)
 		{
-			if (freeList[i] != 0)
+			if (freeList_[i] != 0)
 			{
-				int bit = gvl_bottom_bit(freeList[i]);
-				uint32_t index = (i << 5) + bit;
-				ptr = arr + index;
-				freeList[i] &= ~(uint32_t(1) << bit);
+				int bit = gvl_bottom_bit(freeList_[i]);
+				uint32_t index = ((uint32_t)i << 5) + (uint32_t)bit;
+				ptr = arr_.data() + index;
+				freeList_[i] &= ~(uint32_t(1) << bit);
 				break;
 			}
 		}
 
-		assert(ptr && !ptr->used && ptr >= arr && ptr < arr + Limit);
+		assert(ptr && !ptr->used && ptr >= arr_.data() && ptr < arr_.data() + limit_);
 		ptr->used = true;
 
 		return ptr;
@@ -112,58 +78,44 @@ struct ExactObjectList
 	T* newObjectReuse()
 	{
 		T* ret;
-		if(count >= Limit)
-			ret = &arr[Limit - 1];
+		if (count_ >= (std::size_t)limit_)
+			ret = &arr_[limit_ - 1];
 		else
 			ret = getFreeObject();
 
-		assert(ret->used && ret >= arr && ret < arr + Limit);
+		assert(ret->used && ret >= arr_.data() && ret < arr_.data() + limit_);
 		return ret;
 	}
 
 	T* newObject()
 	{
-		if(count >= Limit)
+		if (count_ >= (std::size_t)limit_)
 			return 0;
 
 		T* ret = getFreeObject();
-		assert(ret->used && ret >= arr && ret < arr + Limit);
+		assert(ret->used && ret >= arr_.data() && ret < arr_.data() + limit_);
 		return ret;
 	}
 
-#if 0
-	iterator begin()
-	{
-		return iterator(&arr[0]);
-	}
-
-	iterator end()
-	{
-		return iterator(&arr[Limit]);
-	}
-#endif
-
 	range all()
 	{
-		return range(&arr[0], &arr[Limit]);
+		return range(arr_.data(), arr_.data() + limit_);
 	}
 
-#if 1
 	void free(T* ptr)
 	{
 		assert(ptr->used);
-		if(ptr->used)
+		if (ptr->used)
 		{
-			uint32_t index = uint32_t(ptr - arr);
-			freeList[index >> 5] |= (uint32_t(1) << (index & 31));
+			uint32_t index = uint32_t(ptr - arr_.data());
+			freeList_[index >> 5] |= (uint32_t(1) << (index & 31));
 
 			ptr->used = false;
 
-			assert(count > 0);
-			--count;
+			assert(count_ > 0);
+			--count_;
 		}
 	}
-#endif
 
 	void free(range& r)
 	{
@@ -172,30 +124,37 @@ struct ExactObjectList
 
 	void clear()
 	{
-		std::memset(freeList, 0xff, FreeListSize * sizeof(uint32_t));
-		count = 0;
+		if (limit_ == 0) return;
 
-		for(std::size_t i = 0; i < Limit; ++i)
-			arr[i].used = false;
+		std::fill(freeList_.begin(), freeList_.end(), 0xFFFFFFFFu);
+		count_ = 0;
 
-		arr[Limit].used = true;
+		for (int i = 0; i < limit_; ++i)
+			arr_[i].used = false;
 
-		// Mark padding as used
-		for(uint32_t index = Limit; index < FreeListSize * 32; ++index)
-			freeList[index >> 5] &= ~(uint32_t(1) << (index & 31));
+		// Sentinel: always "used" so range iteration terminates
+		arr_[limit_].used = true;
+
+		// Mark padding bits (beyond limit) as unavailable
+		int freeListSize = (int)freeList_.size();
+		for (uint32_t index = (uint32_t)limit_; index < (uint32_t)(freeListSize * 32); ++index)
+			freeList_[index >> 5] &= ~(uint32_t(1) << (index & 31));
 	}
 
 	std::size_t size() const
 	{
-		return count;
+		return count_;
 	}
 
-	T arr[Limit + 1]; // Sentinel
+	// Direct pointer to the underlying array (for index arithmetic)
+	T* data() { return arr_.data(); }
+	const T* data() const { return arr_.data(); }
 
-	static uint32_t const FreeListSize = (Limit + 31) / 32;
-	uint32_t freeList[FreeListSize];
-
-	std::size_t count;
+private:
+	int limit_;
+	std::vector<T> arr_;
+	std::vector<uint32_t> freeList_;
+	std::size_t count_;
 };
 
 #endif // LIERO_EXACTOBJECTLIST_HPP

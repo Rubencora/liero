@@ -3,6 +3,7 @@
 
 #include "worm.hpp"
 #include "gfx/blit.hpp"
+#include <vector>
 
 struct Common;
 struct Renderer;
@@ -119,14 +120,18 @@ struct NormalStatsRecorder : StatsRecorder
 	, gameTime(0)
 	, presence(504 / 2, 350 / 2, 504, 350)
 	{
-		for (int i = 0; i < 2; ++i)
-		{
+		resizeWorms(2);
+	}
+
+	void resizeWorms(int n)
+	{
+		worms.resize(n);
+		for (int i = 0; i < n; ++i)
 			worms[i].index = i;
-		}
 	}
 
 	int frame;
-	WormStats worms[2];
+	std::vector<WormStats> worms;
 	uint64_t frameStart;
 	uint64_t processTimeTotal;
 	int gameTime;

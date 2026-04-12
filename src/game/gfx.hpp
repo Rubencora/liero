@@ -82,6 +82,7 @@ struct SettingsMenu : Menu
 		SiTimeToWin,
 		SiZoneTimeout,
 		SiFlagsToWin, // Extra
+		SiFriendlyFire,
 		SiLoadingTimes,
 		SiMaxBonuses,
 		SiNamesOnBonuses,
@@ -293,9 +294,18 @@ struct Gfx
 
 	std::vector<Joystick> joysticks;
 
+	// FPS / ping HUD overlay (F3 to toggle)
+	bool showFpsHud = false;
+	int displayFps = 0;
+	int displayPing = -1; // -1 = not shown; >= 0 = ping in ms (set by NetworkController)
+	Uint32 fpsLastFlipTime = 0;
+	Uint32 fpsAccumMs = 0;
+	Uint32 fpsFrameCount = 0;
+
 	// Network game configuration (set before mainLoop)
 	bool networkMode = false;
 	bool networkIsHost = false;
+	bool networkUdp = false;  // true = UDP rollback, false = TCP lockstep
 	std::string networkHost;
 	int networkPort = 7373;
 

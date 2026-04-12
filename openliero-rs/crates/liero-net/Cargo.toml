@@ -1,0 +1,14 @@
+[package]
+name        = "liero-net"
+description = "Rollback netcode over UDP — input serialization, ring-buffer snapshots"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+liero-data = { workspace = true }
+liero-sim  = { workspace = true }
+anyhow     = { workspace = true }
+thiserror  = { workspace = true }

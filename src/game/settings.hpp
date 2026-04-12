@@ -4,6 +4,7 @@
 #include "worm.hpp"
 #include <string>
 #include <cstring>
+#include <vector>
 #include <gvl/resman/shared_ptr.hpp>
 #include <gvl/support/cstdint.hpp>
 #include <gvl/crypt/gash.hpp>
@@ -30,6 +31,7 @@ struct Extensions
 	int32_t aiParallels;
 
 	bool fullscreen;
+	bool friendlyFire; // allow team-killing in team modes
 
 	int32_t zoneTimeout;
 	uint32_t selectBotWeapons;
@@ -49,7 +51,13 @@ struct Settings : gvl::shared, Extensions
 		GMKillEmAll,
 		GMGameOfTag,
 		GMHoldazone,
-		GMScalesOfJustice
+		GMScalesOfJustice,
+		GMLastManStanding,
+		GMTeamDeathMatch,  // 5: 2v2 team kills
+		GMKingOfHill,      // 6: Holdazone with moving zone (reuses holdazone logic)
+		GMBombTag,         // 7: bomb auto-passes every 20s; last worm alive wins
+		GMZombie,          // 8: on death → respawn as zombie; last human wins
+		GMJuggernaut       // 9: worm 0 starts with ×3 HP; others try to kill it
 	};
 
 	static int const selectableWeapons = 5;
@@ -66,7 +74,7 @@ struct Settings : gvl::shared, Extensions
 
 	static void generateName(WormSettings& ws, Rand& rand);
 
-	uint32_t weapTable[40];
+	uint32_t weapTable[64];
 	int32_t maxBonuses;
 	int32_t blood;
 	int32_t timeToLose;
@@ -83,7 +91,12 @@ struct Settings : gvl::shared, Extensions
 	bool map;
 	bool screenSync;
 
-	gvl::shared_ptr<WormSettings> wormSettings[2];
+	std::vector<gvl::shared_ptr<WormSettings>> wormSettings;
+	int numPlayers; // 2..4, derived from wormSettings.size() at load
+
+	// Ensure wormSettings has at least n entries (n must be 2..4).
+	// New entries are initialized with sensible defaults.
+	void ensureWormCount(int n);
 
 	gvl::gash::value_type hash;
 };
@@ -382,6 +395,7 @@ void archive_text(Settings& settings, Archive& ar)
 	ar.b(S(singleScreenReplay));
 	ar.b(S(spectatorWindow));
 	ar.b(S(fullscreen));
+	ar.b(S(friendlyFire));
 	ar.str(S(tc));
 
 	#undef S
@@ -393,7 +407,8 @@ void archive_text(Settings& settings, Archive& ar)
 
 	#define S(n) #n, ws->n
 
-	ar.array_obj("worms", settings.wormSettings, [&] (gvl::shared_ptr<WormSettings> const& ws) {
+	ar.array_obj("worms", settings.wormSettings, [&] (gvl::shared_ptr<WormSettings>& ws) {
+		if (!ws) ws.reset(new WormSettings());
 		ar.u32(S(controller));
 		if(ar.in) ws->controller = limit<0, 3>(ws->controller);
 		ar.arr("color", ws->rgb, [&] (int& c) { ar.i32(0, c); if (ar.in) c &= 63; });

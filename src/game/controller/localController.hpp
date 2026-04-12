@@ -40,6 +40,7 @@ struct LocalController : CommonController
 	int fadeValue;
 	bool goingToMenu;
 	std::unique_ptr<ReplayWriter> replay;
+	bool mouseAimEnabled_ = false;
 };
 
 #endif // LIERO_CONTROLLER_LOCAL_CONTROLLER_HPP

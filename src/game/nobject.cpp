@@ -1,6 +1,6 @@
 #include "nobject.hpp"
 #include "game.hpp"
-#include "gfx/renderer.hpp"
+#include "gfx/blit.hpp"
 #include "mixer/player.hpp"
 #include "bobject.hpp"
 
@@ -83,8 +83,8 @@ void NObject::process(Game& game)
 	pos += vel;
 
 	LTRACE(rand, 0, nopr, game.rand.x);
-	LTRACE(nobj, this - game.nobjects.arr, moxp, pos.x);
-	LTRACE(nobj, this - game.nobjects.arr, moyp, pos.y);
+	LTRACE(nobj, this - game.nobjects.data(), moxp, pos.x);
+	LTRACE(nobj, this - game.nobjects.data(), moyp, pos.y);
 
 	auto inewPos = ftoi(pos + vel);
 	auto ipos = ftoi(pos);

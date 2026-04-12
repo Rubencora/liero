@@ -5,6 +5,9 @@
 #include "../spectatorviewport.hpp"
 #include "../viewport.hpp"
 #include "../sfx.hpp"
+#include "../replay.hpp"
+#include <cstdio>
+#include <fstream>
 
 ReplayController::ReplayController(
 	gvl::shared_ptr<Common> common, gvl::source source)
@@ -65,6 +68,31 @@ bool ReplayController::process()
 {
 	if(state == StateGame || state == StateGameEnded)
 	{
+		// Replay scrubber controls
+		if(gfx.testSDLKeyOnce(SDL_SCANCODE_SPACE))
+		{
+			paused_ = !paused_;
+		}
+		if(gfx.testSDLKeyOnce(SDL_SCANCODE_RIGHT))
+		{
+			paused_ = false;
+			frameSkip = std::min(frameSkip + 1, 8);
+			inverseFrameSkip = false;
+		}
+		if(gfx.testSDLKeyOnce(SDL_SCANCODE_LEFT))
+		{
+			if(frameSkip > 1)
+			{
+				--frameSkip;
+				inverseFrameSkip = false;
+			}
+			else
+			{
+				inverseFrameSkip = true;
+				frameSkip = std::max(frameSkip, 2);
+			}
+		}
+
 		if(gfx.testSDLKeyOnce(SDL_SCANCODE_R))
 		{
 			*game = *initialGame;
@@ -72,7 +100,7 @@ bool ReplayController::process()
 			replay->reader = initialReader;
 		}
 
-		int realFrameSkip = inverseFrameSkip ? !(cycles % frameSkip) : frameSkip;
+		int realFrameSkip = paused_ ? 0 : (inverseFrameSkip ? !(cycles % frameSkip) : frameSkip);
 		for(int i = 0; i < realFrameSkip && (state == StateGame || state == StateGameEnded); ++i)
 		{
 			if(replay.get())
@@ -99,6 +127,18 @@ bool ReplayController::process()
 				}
 			}
 			game->processFrame();
+
+			if(g_dumpCrcs)
+			{
+				static std::ofstream crcFile;
+				if(!crcFile.is_open())
+					crcFile.open(g_dumpCrcsPath, std::ios::out | std::ios::trunc);
+				if(crcFile.is_open())
+				{
+					uint64_t crc = fullGameChecksum(*game);
+					crcFile << game->cycles << "," << crc << "\n";
+				}
+			}
 
 			if(goingToMenu)
 			{
@@ -147,6 +187,27 @@ void ReplayController::draw(Renderer& renderer, bool useSpectatorViewports)
 	{
 		game->draw(renderer, state, useSpectatorViewports, true);
 	}
+
+	if(state == StateGame && game)
+	{
+		Common& common = *this->common;
+		int elapsedMs = game->cycles * 14;
+		int elapsedSec = elapsedMs / 1000;
+		int elapsedMin = elapsedSec / 60;
+		elapsedSec %= 60;
+
+		// Format: MM:SS  SPEED:Nx  [PAUSED]
+		char timeBuf[64];
+		if(paused_)
+			std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d  PAUSED", elapsedMin, elapsedSec);
+		else if(inverseFrameSkip)
+			std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d  1/%dX", elapsedMin, elapsedSec, frameSkip);
+		else
+			std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d  %dX", elapsedMin, elapsedSec, frameSkip);
+
+		common.font.drawText(renderer.bmp, timeBuf, 2, renderer.renderResY - 8, 10);
+	}
+
 	renderer.fadeValue = fadeValue;
 }
 

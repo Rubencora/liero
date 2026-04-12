@@ -511,6 +511,27 @@ void drawDirtEffect(Common& common, Rand& rand, Level& level, int dirtEffect, in
 	}
 }
 
+// Deposits dirt (color 1, soft dirt) onto background pixels in a w×h rectangle.
+// Used by the Dirt Cannon weapon to build cover.
+void drawDirtDeposit(Common& common, Level& level, int x, int y, int bw, int bh)
+{
+	gvl::rect clip(0, 0, level.width, level.height - 1);
+
+	int x1 = std::max(x, clip.x1);
+	int y1 = std::max(y, clip.y1);
+	int x2 = std::min(x + bw, clip.x2);
+	int y2 = std::min(y + bh, clip.y2);
+
+	for(int py = y1; py < y2; ++py)
+	for(int px = x1; px < x2; ++px)
+	{
+		if(level.mat(px, py).background())
+		{
+			level.setPixel(px, py, 1, common);
+		}
+	}
+}
+
 void correctShadow(Common& common, Level& level, gvl::rect rect)
 {
 	rect.intersect(gvl::rect(0, 3, level.width - 3, level.height));

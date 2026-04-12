@@ -3,7 +3,7 @@
 #include "worm.hpp"
 #include "game.hpp"
 #include "viewport.hpp"
-#include "gfx/renderer.hpp"
+#include "gfx/blit.hpp"
 #include "mixer/player.hpp"
 #include "console.hpp"
 #include "text.hpp"
@@ -17,8 +17,8 @@ void SObjectType::create(Game& game, int x, int y, int ownerIdx, WormWeapon* fir
 	SObject& obj = *game.sobjects.newObjectReuse();
 
 	LTRACE(rand, 0, sobj, game.rand.x);
-	LTRACE(sobj, &obj - game.sobjects.arr, cxpo, x);
-	LTRACE(sobj, &obj - game.sobjects.arr, cypo, y);
+	LTRACE(sobj, &obj - game.sobjects.data(), cxpo, x);
+	LTRACE(sobj, &obj - game.sobjects.data(), cypo, y);
 
 	assert(numSounds < 10);
 
@@ -217,8 +217,8 @@ void SObjectType::create(Game& game, int x, int y, int ownerIdx, WormWeapon* fir
 
 					IF_ENABLE_TRACING(Common& common = *game.common);
 
-					LTRACE(nobj, &*i - game.nobjects.arr, puxp, i->vel.x);
-					LTRACE(nobj, &*i - game.nobjects.arr, puyp, i->vel.y);
+					LTRACE(nobj, &*i - game.nobjects.data(), puxp, i->vel.x);
+					LTRACE(nobj, &*i - game.nobjects.data(), puyp, i->vel.y);
 				}
 			}
 		}
@@ -233,17 +233,19 @@ void SObjectType::create(Game& game, int x, int y, int ownerIdx, WormWeapon* fir
 			for(int y = rect.y1; y < rect.y2; ++y)
 			for(int x = rect.x1; x < rect.x2; ++x)
 			{
-				if(game.level.mat(x, y).anyDirt()
-				&& game.rand(8) == 0)
+				if(game.level.mat(x, y).anyDirt())
 				{
-					PalIdx pix = game.level.pixel(x, y);
-					int angle = game.rand(128);
-					common.nobjectTypes[2].create2(
-						game,
-						angle,
-						fixedvec(),
-						itof(gvl::ivec2(x, y)),
-						pix, ownerIdx, firedBy);
+					if(game.rand(8) == 0)
+					{
+						PalIdx pix = game.level.pixel(x, y);
+						int angle = game.rand(128);
+						common.nobjectTypes[2].create2(
+							game,
+							angle,
+							fixedvec(),
+							itof(gvl::ivec2(x, y)),
+							pix, ownerIdx, firedBy);
+					}
 				}
 			}
 		}

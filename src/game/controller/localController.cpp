@@ -9,6 +9,7 @@
 #include "../sfx.hpp"
 #include "../reader.hpp"
 #include "../filesystem.hpp"
+#include "../replay.hpp"
 
 #include "../ai/predictive_ai.hpp"
 #include "../worm.hpp"
@@ -16,6 +17,8 @@
 #include "../viewport.hpp"
 
 #include <cctype>
+#include <cmath>
+#include <fstream>
 
 gvl::shared_ptr<WormAI> createAi(int controller, Worm& worm, Settings& settings)
 {
@@ -28,47 +31,78 @@ gvl::shared_ptr<WormAI> createAi(int controller, Worm& worm, Settings& settings)
 	return gvl::shared_ptr<WormAI>();
 }
 
+// Compute the HUD statsX for worm i out of n total worms.
+// For 2p, preserve the original offsets (0 and 218).
+static int hudStatsX(int i, int n)
+{
+	if (n <= 2)
+	{
+		static const int xs2[2] = {0, 218};
+		return xs2[i < 2 ? i : 1];
+	}
+	if (n == 3)
+	{
+		static const int xs3[3] = {0, 107, 214};
+		return xs3[i < 3 ? i : 2];
+	}
+	// 4 players: 78px gaps, bars are 75px wide → rightmost ends at 234+75=309 < 320.
+	static const int xs4[4] = {0, 78, 156, 234};
+	return xs4[i < 4 ? i : 3];
+}
+
+// Create viewports for n worms within the 320x200 canvas.
+// Viewport area is 320x161 (rows 0-160); HUD occupies rows 161-199.
+// 2-player: two 158x158 side-by-side (unchanged).
+// 3-4 player: 2x2 grid of 158x78 each.
+static void makeViewports(Game& game, int n)
+{
+	switch (n)
+	{
+	case 2:
+	default:
+		// Identical to the original layout — must not change for 2p.
+		game.addViewport(new Viewport(gvl::rect(  0,  0, 158, 158), 0, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(160,  0, 318, 158), 1, 504, 350));
+		break;
+	case 3:
+		game.addViewport(new Viewport(gvl::rect(  0,  0, 158,  78), 0, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(160,  0, 318,  78), 1, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(  0, 80, 158, 158), 2, 504, 350));
+		break;
+	case 4:
+		game.addViewport(new Viewport(gvl::rect(  0,  0, 158,  78), 0, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(160,  0, 318,  78), 1, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(  0, 80, 158, 158), 2, 504, 350));
+		game.addViewport(new Viewport(gvl::rect(160, 80, 318, 158), 3, 504, 350));
+		break;
+	}
+}
+
 LocalController::LocalController(gvl::shared_ptr<Common> common, gvl::shared_ptr<Settings> settings)
 : game(common, settings, gvl::shared_ptr<SoundPlayer>(new DefaultSoundPlayer(*common)))
 , state(StateInitial)
 , fadeValue(0)
 , goingToMenu(false)
 {
-	Worm* worm1 = new Worm();
-	worm1->settings = settings->wormSettings[0];
-	worm1->health = worm1->settings->health;
-	worm1->index = 0;
-	worm1->statsX = 0;
-	worm1->ai = createAi(worm1->settings->controller, *worm1, *settings);
+	int n = settings->numPlayers;
+	if (n < 2) n = 2;
+	if (n > 4) n = 4;
+	settings->ensureWormCount(n);
 
-	Worm* worm2 = new Worm();
-	worm2->settings = settings->wormSettings[1];
-	worm2->health = worm2->settings->health;
-	worm2->index = 1;
-	worm2->statsX = 218;
-	worm2->ai = createAi(worm2->settings->controller, *worm2, *settings);
-
-#if 0
-	for(int i = 0; i < 10; ++i)
+	for (int i = 0; i < n; ++i)
 	{
-		Worm* worm2 = new Worm(*this);
-		worm2->settings = settings->wormSettings[1];
-		worm2->health = worm2->settings->health;
-		worm2->index = 1;
-		if(worm2->settings->controller == 1)
-			worm2->ai.reset(new DumbLieroAI(*worm2));
-
-		addWorm(worm2);
+		Worm* w = new Worm();
+		w->settings = settings->wormSettings[i];
+		w->health   = w->settings->health;
+		w->index    = i;
+		w->statsX   = hudStatsX(i, n);
+		w->ai       = createAi(w->settings->controller, *w, *settings);
+		game.addWorm(w);
 	}
-#endif
 
-	game.addViewport(new Viewport(gvl::rect(0, 0, 158, 158), worm1->index, 504, 350));
-	game.addViewport(new Viewport(gvl::rect(160, 0, 158+160, 158), worm2->index, 504, 350));
+	makeViewports(game, n);
 
-	game.addWorm(worm1);
-	game.addWorm(worm2);
-
-	// +68 on x to align the viewport in the middle
+	// +68 on x to align the spectator viewport in the middle
 	game.addSpectatorViewport(new SpectatorViewport(gvl::rect(0, 0, 504 + 68, 350), 504, 350));
 }
 
@@ -109,6 +143,12 @@ void LocalController::onKey(int key, bool keyState)
 	{
 		fadeValue = 31;
 		goingToMenu = true;
+	}
+
+	// F9 (DOS scan 0x43 = 67) toggles mouse aim
+	if(key == 67 && keyState)
+	{
+		mouseAimEnabled_ = !mouseAimEnabled_;
 	}
 }
 
@@ -180,7 +220,71 @@ bool LocalController::process()
 					replay.reset();
 				}
 			}
+
+			// Mouse aim: sample cursor once per game frame
+			if(state == StateGame && mouseAimEnabled_ && gfx.sdlRenderer)
+			{
+				int raw_mx, raw_my;
+				SDL_GetMouseState(&raw_mx, &raw_my);
+				float lx, ly;
+				SDL_RenderWindowToLogical(gfx.sdlRenderer, raw_mx, raw_my, &lx, &ly);
+				// lx,ly are already in the 320x200 logical space
+
+				for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+				{
+					Worm& worm = *game.worms[wi];
+					if(worm.ai.get() || !worm.visible) continue;
+					if(worm.settings->controller != 0) continue;
+
+					// Find this worm's viewport
+					Viewport* vp = nullptr;
+					for(auto* v : game.viewports)
+					{
+						if(v->wormIdx == (int)wi) { vp = v; break; }
+					}
+					if(!vp) continue;
+
+					int worm_sx = ftoi(worm.pos.x) - vp->x + vp->rect.x1;
+					int worm_sy = ftoi(worm.pos.y) - vp->y + vp->rect.y1;
+
+					float dx = lx - (float)worm_sx;
+					float dy = ly - (float)worm_sy;
+
+					// Only override direction when cursor is not too close
+					if(std::fabs(dx) > 2.0f)
+						worm.direction = (dx > 0) ? 1 : 0;
+
+					// Map angle: 64=horizontal, 12=upper-left, 116=lower-right
+					float dx_front = (worm.direction == 1) ? dx : -dx;
+					float angle_rad = std::atan2f(dy, std::max(dx_front, 1.0f));
+					// atan2 range: -pi/2 to pi/2 when dx_front>0
+					// liero range right: 64 (horiz) to 116 (down) to 64 (horiz up via 64..116)
+					// 64 = horizontal (angle_rad=0), 116 = straight down (angle_rad=pi/2)
+					int liero_angle = 64 + (int)std::roundf(angle_rad * 52.0f / (float)(M_PI * 0.5));
+					liero_angle = std::max(12, std::min(116, liero_angle));
+
+					worm.mouseAimAngle = liero_angle;
+				}
+			}
+			else if(!mouseAimEnabled_)
+			{
+				for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+					game.worms[wi]->mouseAimAngle = -1;
+			}
+
 			game.processFrame();
+
+			if(g_dumpCrcs)
+			{
+				static std::ofstream crcFile;
+				if(!crcFile.is_open())
+					crcFile.open(g_dumpCrcsPath, std::ios::out | std::ios::trunc);
+				if(crcFile.is_open())
+				{
+					uint64_t crc = fullGameChecksum(game);
+					crcFile << game.cycles << "," << crc << "\n";
+				}
+			}
 
 			if(game.isGameOver())
 			{
@@ -271,7 +375,7 @@ void LocalController::changeState(GameState newState)
 				std::strftime(buf, sizeof(buf), "%Y-%m-%d %H.%M.%S", now);
 
 				std::string playerNames = " ";
-				for(std::size_t i = 0; i < 2; ++i)
+				for(std::size_t i = 0; i < game.worms.size(); ++i)
 				{
 					Worm& worm = *game.worms[i];
 					std::string const& name = worm.settings->name;

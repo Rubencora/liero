@@ -1,0 +1,9 @@
+[package]
+name = "liero-ffi-proof"
+version = "0.1.0"
+edition = "2021"
+description = "S8-02: FFI proof-of-concept — loads libliero_sim.a from Rust and runs 1000 frames"
+
+[[bin]]
+name = "liero-ffi-proof"
+path = "src/main.rs"

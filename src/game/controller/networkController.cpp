@@ -197,7 +197,16 @@ bool NetworkController::process()
 		{
 			// Lockstep: exchange control states before advancing simulation.
 			// Both sides send then receive — same order on each end.
+			// Pack local control state + mouse aim into one uint32
 			uint32_t myCtrl = game.worms[localIdx_]->controlStates.pack();
+			{
+				int angle = game.worms[localIdx_]->mouseAimAngle;
+				if(angle >= 0)
+				{
+					myCtrl |= (1u << 7);                          // mouse aim active flag
+					myCtrl |= ((uint32_t)(angle & 0x7F) << 8);   // angle in bits 8-14
+				}
+			}
 			uint32_t theirCtrl = 0;
 
 			if(!syncSend(&myCtrl, sizeof(myCtrl)) ||
@@ -209,7 +218,16 @@ bool NetworkController::process()
 				return true; // let fade-out run
 			}
 
+			// Unpack remote control state + mouse aim
 			game.worms[remoteIdx_]->controlStates.unpack(theirCtrl);
+			if(theirCtrl & (1u << 7))
+			{
+				game.worms[remoteIdx_]->mouseAimAngle = (int)((theirCtrl >> 8) & 0x7F);
+			}
+			else
+			{
+				game.worms[remoteIdx_]->mouseAimAngle = -1;
+			}
 
 			game.processFrame();
 

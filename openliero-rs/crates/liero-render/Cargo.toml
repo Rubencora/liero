@@ -1,0 +1,17 @@
+[package]
+name        = "liero-render"
+description = "GPU renderer — paletted R8 texture + wgpu backend"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+liero-data = { workspace = true }
+liero-sim  = { workspace = true }
+anyhow     = { workspace = true }
+wgpu       = { workspace = true }
+winit      = { workspace = true }
+bytemuck   = { workspace = true }
+font8x8    = "0.2"

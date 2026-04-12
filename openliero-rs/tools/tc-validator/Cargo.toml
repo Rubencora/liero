@@ -1,0 +1,16 @@
+[package]
+name        = "tc-validator"
+description = "CLI tool — lint TC directories, report weapon/nobject/sobject counts, flag missing refs"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[[bin]]
+name = "tc-validator"
+path = "src/main.rs"
+
+[dependencies]
+liero-data = { workspace = true }
+anyhow     = { workspace = true }

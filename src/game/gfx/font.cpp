@@ -1,6 +1,7 @@
 #include "font.hpp"
 #include "../reader.hpp"
-#include "../gfx.hpp"
+#include "bitmap.hpp"
+#include "blit.hpp"
 #include "macros.hpp"
 #include "color.hpp"
 

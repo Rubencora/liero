@@ -1,7 +1,8 @@
 #include "level.hpp"
 
 #include "game.hpp"
-#include "gfx.hpp"
+#include "gfx/blit.hpp"
+#include "gfx/bitmap.hpp"
 #include "gfx/color.hpp"
 #include "filesystem.hpp"
 

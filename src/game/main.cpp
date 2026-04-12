@@ -102,6 +102,7 @@ try
 				{
 					gfx.networkMode = true;
 					gfx.networkIsHost = true;
+					gfx.networkUdp = false; // legacy TCP lockstep
 					if (i + 1 < argc && argv[i+1][0] != '-')
 					{
 						++i;
@@ -109,11 +110,70 @@ try
 					}
 					// else use default port 7373
 				}
+				else if (std::strcmp(argv[i] + 2, "host-udp") == 0)
+				{
+					gfx.networkMode = true;
+					gfx.networkIsHost = true;
+					gfx.networkUdp = true;
+					if (i + 1 < argc && argv[i+1][0] != '-')
+					{
+						++i;
+						gfx.networkPort = std::atoi(argv[i]);
+					}
+					// else use default port 7373
+				}
+				else if (std::strcmp(argv[i] + 2, "pool-scale") == 0 && i + 1 < argc)
+				{
+					++i;
+					int s = std::atoi(argv[i]);
+					g_poolScale = (s >= 1 && s <= 8) ? s : 1;
+				}
+				else if (std::strcmp(argv[i] + 2, "dump-crcs") == 0 && i + 1 < argc)
+				{
+					++i;
+					g_dumpCrcs = true;
+					g_dumpCrcsPath = argv[i];
+				}
+				else if (std::strcmp(argv[i] + 2, "debug-desync") == 0)
+				{
+					g_dumpCrcs = true;
+					g_dumpCrcsPath = "desync_crcs.csv";
+				}
+				else if (std::strcmp(argv[i] + 2, "headless") == 0)
+				{
+					g_headless = true;
+				}
+				else if (std::strcmp(argv[i] + 2, "replay") == 0 && i + 1 < argc)
+				{
+					++i;
+					g_replayPath = argv[i];
+				}
 				else if (std::strcmp(argv[i] + 2, "connect") == 0 && i + 1 < argc)
 				{
 					++i;
 					gfx.networkMode = true;
 					gfx.networkIsHost = false;
+					gfx.networkUdp = false; // legacy TCP lockstep
+
+					std::string target = argv[i];
+					auto colon = target.rfind(':');
+					if (colon != std::string::npos)
+					{
+						gfx.networkHost = target.substr(0, colon);
+						gfx.networkPort = std::atoi(target.substr(colon + 1).c_str());
+					}
+					else
+					{
+						gfx.networkHost = target;
+						// use default port 7373
+					}
+				}
+				else if (std::strcmp(argv[i] + 2, "connect-udp") == 0 && i + 1 < argc)
+				{
+					++i;
+					gfx.networkMode = true;
+					gfx.networkIsHost = false;
+					gfx.networkUdp = true;
 
 					std::string target = argv[i];
 					auto colon = target.rfind(':');
@@ -136,6 +196,12 @@ try
 			tcName = argv[i];
 			tcSet = true;
 		}
+	}
+
+	if(g_headless)
+	{
+		SDL_setenv("SDL_VIDEODRIVER", "offscreen", 1);
+		SDL_setenv("SDL_AUDIODRIVER", "dummy", 1);
 	}
 
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);

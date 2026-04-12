@@ -1,0 +1,27 @@
+[package]
+name        = "liero-desktop"
+description = "Native desktop entry point — winit window + event loop"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[[bin]]
+name = "openliero"
+path = "src/main.rs"
+
+[dependencies]
+liero-data   = { workspace = true }
+liero-sim    = { workspace = true }
+liero-render = { workspace = true }
+liero-audio  = { workspace = true }
+liero-net    = { workspace = true }
+liero-mod    = { workspace = true }
+anyhow       = { workspace = true }
+serde        = { workspace = true }
+toml         = { workspace = true }
+winit        = { workspace = true }
+pollster     = { workspace = true }
+gilrs        = "0.10"
+dirs         = "5"

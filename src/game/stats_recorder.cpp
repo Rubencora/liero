@@ -181,7 +181,7 @@ void NormalStatsRecorder::tick(Game& game)
 
 void NormalStatsRecorder::finish(Game& game)
 {
-	for (int i = 0; i < 2; ++i)
+	for (int i = 0; i < (int)worms.size() && i < (int)game.worms.size(); ++i)
 	{
 		auto* gw = game.worms[i];
 		WormStats& w = worms[i];

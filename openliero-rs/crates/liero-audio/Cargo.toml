@@ -1,0 +1,15 @@
+[package]
+name        = "liero-audio"
+description = "Audio mixer — cpal backend, native + Web Audio API"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+liero-data = { workspace = true }
+anyhow     = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = "0.15"

@@ -1,7 +1,7 @@
 #include "worm.hpp"
 #include "game.hpp"
 #include "mixer/player.hpp"
-#include "gfx/renderer.hpp"
+#include "gfx/blit.hpp"
 #include "constants.hpp"
 #include "console.hpp"
 #include "filesystem.hpp" // For joinPath
@@ -210,7 +210,9 @@ void Worm::process(Game& game)
 	if(health > settings->health)
 		health = settings->health;
 
-	if((game.settings->gameMode != Settings::GMKillEmAll && game.settings->gameMode != Settings::GMScalesOfJustice)
+	if((game.settings->gameMode != Settings::GMKillEmAll
+	    && game.settings->gameMode != Settings::GMScalesOfJustice
+	    && game.settings->gameMode != Settings::GMLastManStanding)
 	|| lives > 0)
 	{
 		if(visible)
@@ -427,9 +429,32 @@ void Worm::process(Game& game)
 						--lives;
 					}
 				}
+				else if (game.settings->gameMode == Settings::GMZombie && !isZombie)
+				{
+					// First death: become a zombie instead of losing a life.
+					isZombie = true;
+					// Keep lives at current value — zombies respawn indefinitely.
+					health = settings->health / 2;
+				}
 				else
 				{
 					--lives;
+					// Juggernaut: pass the title to a living non-juggernaut worm.
+					if (game.settings->gameMode == Settings::GMJuggernaut && isJuggernaut && lives > 0)
+					{
+						// Find next eligible worm.
+						for (auto* w : game.worms)
+						{
+							if (w != this && w->lives > 0)
+							{
+								isJuggernaut        = false;
+								game.jugIdx         = w->index;
+								w->isJuggernaut     = true;
+								w->health           = w->settings->health * 3;
+								break;
+							}
+						}
+					}
 				}
 
 				int oldLastKilled = game.lastKilledIdx;
@@ -830,9 +855,25 @@ void Worm::beginRespawn(Game& game)
 
 	auto enemy = temp;
 
-	if(game.worms.size() == 2)
+	// Respawn away from the centroid of all other living worms.
+	// For n=2 the centroid equals the single other worm's position —
+	// identical result to the original, so golden CRCs are preserved.
+	if(game.worms.size() >= 2)
 	{
-		enemy = ftoi(game.worms[index ^ 1]->pos);
+		long sx = 0, sy = 0;
+		int n = 0;
+		for(std::size_t wi = 0; wi < game.worms.size(); ++wi)
+		{
+			if((int)wi == index) continue;
+			sx += ftoi(game.worms[wi]->pos.x);
+			sy += ftoi(game.worms[wi]->pos.y);
+			++n;
+		}
+		if(n > 0)
+		{
+			enemy.x = (int)(sx / n);
+			enemy.y = (int)(sy / n);
+		}
 	}
 
 	int trials = 0;
@@ -1139,6 +1180,14 @@ void Worm::processTasks(Game& game)
 void Worm::processAiming(Game& game)
 {
 	Common& common = *game.common;
+
+	// Mouse aim override: snap angle directly, skip keyboard acceleration
+	if(mouseAimAngle >= 0)
+	{
+		aimingAngle = itof(mouseAimAngle);
+		aimingSpeed = 0;
+		return;
+	}
 
 	bool up = pressed(Up);
 	bool down = pressed(Down);

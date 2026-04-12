@@ -209,6 +209,12 @@ Texts::Texts()
 	gameModes[1] = "Game of Tag";
 	gameModes[2] = "Holdazone";
 	gameModes[3] = "Scales of Justice";
+	gameModes[4] = "Last Man Standing";
+	gameModes[5] = "Team DM";
+	gameModes[6] = "King of the Hill";
+	gameModes[7] = "Bomb Tag";
+	gameModes[8] = "Zombie";
+	gameModes[9] = "Juggernaut";
 
 	onoff[0] = "OFF";
 	onoff[1] = "ON";
@@ -483,31 +489,32 @@ void Common::precompute()
 		sobjectTypes[i].id = i;
 	}
 
-	// Precompute sprites
-	wormSprites.allocate(16, 16, 2 * 2 * 21);
+	// Precompute sprites for 4 worm color slots (2 directions × 21 frames each).
+	// Slots 0-3 correspond to worm indices 0-3.
+	// Each slot shifts palette indices 30-34 by +9*slot so worms use distinct colour ramps:
+	//   slot 0 → palette 30-34 (blue),  slot 1 → 39-43 (green),
+	//   slot 2 → 48-52 (red),           slot 3 → 57-61 (yellow)
+	wormSprites.allocate(16, 16, 4 * 2 * 21);
 
 	for(int i = 0; i < 21; ++i)
 	{
 		for(int y = 0; y < 16; ++y)
 		for(int x = 0; x < 16; ++x)
 		{
-			PalIdx pix = (largeSprites.spritePtr(16 + i) + y*16)[x];
+			PalIdx srcPix = (largeSprites.spritePtr(16 + i) + y*16)[x];
 
-			(wormSprite(i, 1, 0) + y*16)[x] = pix;
-			if(x == 15)
-				(wormSprite(i, 0, 0) + y*16)[15] = 0;
-			else
-				(wormSprite(i, 0, 0) + y*16)[14 - x] = pix;
+			for(int slot = 0; slot < 4; ++slot)
+			{
+				PalIdx pix = srcPix;
+				if(pix >= 30 && pix <= 34)
+					pix = (PalIdx)(pix + 9 * slot); // shift colour ramp per slot
 
-			if(pix >= 30 && pix <= 34)
-				pix += 9; // Change worm color
-
-			(wormSprite(i, 1, 1) + y*16)[x] = pix;
-
-			if(x == 15)
-				(wormSprite(i, 0, 1) + y*16)[15] = 0; // A bit haxy, but works
-			else
-				(wormSprite(i, 0, 1) + y*16)[14 - x] = pix;
+				(wormSprite(i, 1, slot) + y*16)[x] = pix;
+				if(x == 15)
+					(wormSprite(i, 0, slot) + y*16)[15] = 0;
+				else
+					(wormSprite(i, 0, slot) + y*16)[14 - x] = pix;
+			}
 		}
 	}
 

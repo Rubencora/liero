@@ -1,0 +1,18 @@
+[package]
+name        = "liero-relay"
+description = "Relay server for OpenLiero online matches — TCP/WebSocket with 6-letter room codes"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[[bin]]
+name = "liero-relay"
+path = "src/main.rs"
+
+[dependencies]
+tokio             = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.26"
+futures-util      = "0.3"
+anyhow            = { workspace = true }

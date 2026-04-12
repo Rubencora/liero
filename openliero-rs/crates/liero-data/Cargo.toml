@@ -1,0 +1,14 @@
+[package]
+name        = "liero-data"
+description = "TC data loaders — weapons, nobjects, sobjects, level, sprites"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[dependencies]
+serde  = { workspace = true }
+toml   = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }

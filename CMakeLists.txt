@@ -13,7 +13,10 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-s")
 
-set(SOURCES
+# Simulation-only sources — compile without SDL/rendering dependencies.
+# predictive_ai.cpp excluded (uses SDL threads via work_queue.hpp).
+# viewport.cpp / spectatorviewport.cpp included — they don't pull SDL.
+set(SIM_SOURCES
     src/game/bobject.cpp
     src/game/bonus.cpp
     src/game/common.cpp
@@ -36,7 +39,6 @@ set(SOURCES
     src/game/weapon.cpp
     src/game/worm.cpp
     src/game/ai/dijkstra.cpp
-    src/game/ai/predictive_ai.cpp
     src/game/gfx/blit.cpp
     src/game/gfx/font.cpp
     src/game/gfx/palette.cpp
@@ -53,6 +55,13 @@ set(SOURCES
     src/gvl/io2/stream.cpp
     src/gvl/io2/convert.cpp
     src/gvl/containers/list.cpp
+    src/game/sim_c_api.cpp
+)
+
+# Full sources include sim + AI (which needs SDL) for the interactive game.
+set(SOURCES
+    ${SIM_SOURCES}
+    src/game/ai/predictive_ai.cpp
 )
 
 set(GAME_SOURCES ${SOURCES}
@@ -66,7 +75,11 @@ set(GAME_SOURCES ${SOURCES}
     src/game/controller/localController.cpp
     src/game/controller/networkController.cpp
     src/game/controller/replayController.cpp
+    src/game/controller/rollbackController.cpp
     src/game/controller/stats_presenter.cpp
+    src/game/net/udpTransport.cpp
+    src/game/net/snapshot.cpp
+    src/game/net/session.cpp
     src/tl/socket.c
     src/game/menu/booleanSwitchBehavior.cpp
     src/game/menu/enumBehavior.cpp
@@ -79,7 +92,9 @@ set(GAME_SOURCES ${SOURCES}
     src/game/menu/timeBehavior.cpp
 )
 
-set(TC_TOOL_SOURCES ${SOURCES}
+set(TC_TOOL_SOURCES
+    ${SIM_SOURCES}
+    src/game/ai/predictive_ai.cpp
     src/tc_tool/common_exereader.cpp
     src/tc_tool/common_writer.cpp
     src/tc_tool/tc_tool_main.cpp
@@ -102,6 +117,21 @@ if(APPLE)
 else(APPLE)
     set(GAME_SOURCES ${GAME_SOURCES} src/game/sdlmain.cpp)
 endif(APPLE)
+
+# --- liero_sim: headless simulation static library (no SDL) ---
+add_library(liero_sim STATIC ${SIM_SOURCES})
+target_compile_definitions(liero_sim PRIVATE LIERO_HEADLESS=1)
+target_include_directories(liero_sim PUBLIC
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/game)
+
+# --- sim_ci: headless CRC-dump tool — links liero_sim, no SDL ---
+add_executable(sim_ci EXCLUDE_FROM_ALL src/sim_ci/sim_ci_main.cpp)
+target_compile_definitions(sim_ci PRIVATE LIERO_HEADLESS=1)
+target_link_libraries(sim_ci liero_sim)
+target_include_directories(sim_ci PRIVATE
+    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/game)
 
 add_executable(openliero WIN32 ${GAME_SOURCES} ${RESOURCE_FILES} pkg/win32_icon.rc)
 add_executable(tctool ${TC_TOOL_SOURCES})

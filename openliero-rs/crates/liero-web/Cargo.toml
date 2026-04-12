@@ -1,0 +1,35 @@
+[package]
+name        = "liero-web"
+description = "WebAssembly entry point — WebGPU/WebGL rendering, local multiplayer in the browser"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+liero-data   = { workspace = true }
+liero-sim    = { workspace = true }
+liero-render = { workspace = true }
+anyhow       = { workspace = true }
+pollster     = { workspace = true }
+
+# WASM-specific: embed TC at compile time
+include_dir          = "0.7"
+
+# wasm-bindgen glue
+wasm-bindgen         = "0.2"
+wasm-bindgen-futures = "0.4"
+
+# Web APIs
+web-sys = { version = "0.3", features = ["console"] }
+console_error_panic_hook = "0.1"
+
+# winit — WASM support is built-in (no extra feature needed)
+winit = { workspace = true }
+
+# wgpu with WebGL backend (broad browser compatibility; WebGPU available in Chrome/Edge)
+wgpu = { workspace = true, features = ["webgl"] }

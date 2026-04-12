@@ -101,6 +101,7 @@ struct WormSettings : gvl::shared, WormSettingsExtensions
             weapons[i] = 1;
         }
 		std::memset(controls, 0, sizeof(controls));
+		std::memset(savedLoadouts, 0, sizeof(savedLoadouts));
 	}
 
 	gvl::gash::value_type& updateHash();
@@ -112,6 +113,8 @@ struct WormSettings : gvl::shared, WormSettingsExtensions
 	uint32_t controller; // CPU / Human
 	uint32_t controls[MaxControl];
 	uint32_t weapons[5]; // TODO: Adjustable
+	static const int NumLoadouts = 10;
+	uint32_t savedLoadouts[NumLoadouts][5]; // slots 0=most-recent ... 9=oldest
 	std::string name;
 	int rgb[3];
 	bool randomName;
@@ -139,6 +142,10 @@ void archive(Archive ar, WormSettings& ws)
 		ar.ui16(ws.rgb[i]);
 	ar.b(ws.randomName);
 	ar.str(ws.name);
+	// Saved loadouts (appended; old profiles will throw stream_error which is caught in loadProfile)
+	for (int slot = 0; slot < WormSettings::NumLoadouts; ++slot)
+		for (int w = 0; w < 5; ++w)
+			ar.ui16(ws.savedLoadouts[slot][w]);
 	if(ar.context.replayVersion <= 1)
 	{
 		ws.WormSettingsExtensions::operator=(WormSettingsExtensions());
@@ -398,6 +405,16 @@ struct Worm : gvl::shared
 
 	// Data for LocalController
 	ControlState cleanControlStates; // This contains the real state of real and extended controls
+
+	// Mouse aim: -1 = disabled, >= 0 = target liero angle set by LocalController
+	int mouseAimAngle = -1;
+
+	// Team / mode-specific state
+	int  teamId       = 0;    // 0 = no team; 1/2 = team A/B (assigned by game mode)
+	bool isZombie     = false; // GMZombie: respawned as zombie
+	bool hasBomb      = false; // GMBombTag: this worm carries the bomb
+	int  bombTimer    = 0;     // GMBombTag: frames since bomb acquired
+	bool isJuggernaut = false; // GMJuggernaut: this worm is the current Juggernaut
 };
 
 bool checkForWormHit(Game& game, int x, int y, int dist, Worm* ownWorm);

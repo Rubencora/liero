@@ -18,7 +18,8 @@ struct Weapon
 		STDType1,
 		STSteerable,
 		STDType2,
-		STLaser
+		STLaser,
+		STHoming
 	};
 
 	void fire(Game& game, int angle, fixedvec vel, int speed, fixedvec pos, int ownerIdx, WormWeapon* ww) const;
@@ -72,6 +73,15 @@ struct Weapon
 	int partTrailObj;
 	int partTrailDelay;
 	bool chainExplosion;
+
+	// Sprint 7 engine hooks (all default 0/false so old .cfg files are unaffected)
+	int  homingStrength      = 0;     // angle steps/frame to steer toward nearest worm (0=off)
+	int  attractRadius       = 0;     // pixels; if >0 pull nearby objects toward projectile each frame
+	int  attractForce        = 0;     // fixed-point force magnitude (e.g. 800)
+	int  chainLightningJumps = 0;     // on worm hit: jump to nearest other worm ≤80px, up to N times
+	bool onExpireTeleport    = false; // on timeLeft expire: teleport owner worm to projectile pos
+	bool dirtDeposit         = false; // blowUpObject: add dirt to background pixels instead of removing
+	bool pierceDirt          = false; // do not collide with terrain; pass straight through
 
 	int computedLoadingTime(Settings& settings) const;
 

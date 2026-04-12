@@ -180,6 +180,15 @@ void archive_text(Common& common, Weapon& weapon, Archive& ar)
 		SObj(createOnExp)
 		B(chainExplosion)
 
+		// Sprint 7 engine hooks
+		I(homingStrength)
+		I(attractRadius)
+		I(attractForce)
+		I(chainLightningJumps)
+		B(onExpireTeleport)
+		B(dirtDeposit)
+		B(pierceDirt)
+
 		#undef I
 		#undef B
 		#undef S
