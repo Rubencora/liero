@@ -12,10 +12,12 @@
     :root {
       --green:  #39ff14;
       --yellow: #ffcc00;
+      --red:    #ff4444;
       --bg:     #0a0a0a;
       --surface:#111;
+      --border: #1e1e1e;
       --text:   #cccccc;
-      --dim:    #666;
+      --dim:    #555;
     }
 
     body {
@@ -34,26 +36,20 @@
 
     /* ── TOP BAR ──────────────────────────────────────────────── */
     .topbar {
-      border-bottom: 1px solid #1e1e1e;
+      border-bottom: 1px solid var(--border);
       padding: 0.75rem 1.5rem;
       display: flex;
       align-items: center;
       gap: 1.5rem;
     }
-
     .topbar .logo {
       font-family: 'Press Start 2P', monospace;
       font-size: 0.65rem;
       color: var(--green);
-      text-shadow: 0 0 10px rgba(57, 255, 20, 0.4);
-      text-decoration: none;
+      text-shadow: 0 0 10px rgba(57,255,20,0.4);
     }
     .topbar .logo:hover { text-decoration: none; opacity: 0.8; }
-
-    .topbar .back {
-      font-size: 0.8rem;
-      color: var(--dim);
-    }
+    .topbar .back { font-size: 0.8rem; color: var(--dim); }
     .topbar .back:hover { color: var(--green); }
 
     /* ── MAIN ─────────────────────────────────────────────────── */
@@ -62,17 +58,16 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      padding: 2rem 1.5rem;
+      padding: 1.5rem;
       gap: 1.5rem;
     }
 
     /* ── CANVAS WRAPPER ───────────────────────────────────────── */
     .canvas-wrap {
       position: relative;
-      border: 2px solid #222;
       background: #000;
       line-height: 0;
+      border: 2px solid #1a1a1a;
     }
 
     canvas {
@@ -84,7 +79,7 @@
       image-rendering: crisp-edges;
     }
 
-    /* Loading overlay — shown until WASM starts */
+    /* Loading overlay */
     #overlay {
       position: absolute;
       inset: 0;
@@ -94,14 +89,14 @@
       align-items: center;
       justify-content: center;
       gap: 1rem;
-      transition: opacity 0.4s;
+      z-index: 10;
+      transition: opacity 0.5s;
     }
     #overlay.hidden { opacity: 0; pointer-events: none; }
 
     .spinner {
-      width: 2rem;
-      height: 2rem;
-      border: 2px solid #222;
+      width: 2rem; height: 2rem;
+      border: 2px solid #1a1a1a;
       border-top-color: var(--green);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
@@ -115,54 +110,132 @@
       letter-spacing: 0.1em;
     }
 
-    /* ── CONTROLS ─────────────────────────────────────────────── */
-    .controls {
-      display: flex;
-      gap: 2rem;
-      flex-wrap: wrap;
-      justify-content: center;
-      max-width: 640px;
+    /* ── SETTINGS PANEL ───────────────────────────────────────── */
+    .settings {
       width: 100%;
-    }
-
-    .ctrl-block {
+      max-width: 640px;
       background: var(--surface);
-      border: 1px solid #1e1e1e;
-      padding: 1rem 1.2rem;
-      flex: 1;
-      min-width: 240px;
+      border: 1px solid var(--border);
     }
 
-    .ctrl-block h3 {
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .settings-header:hover { background: #161616; }
+
+    .settings-header h2 {
       font-family: 'Press Start 2P', monospace;
-      font-size: 0.55rem;
+      font-size: 0.6rem;
       color: var(--yellow);
-      margin-bottom: 0.8rem;
       letter-spacing: 0.1em;
     }
 
-    .ctrl-row {
+    .settings-header .toggle-icon {
+      color: var(--dim);
+      font-size: 0.8rem;
+      transition: transform 0.2s;
+    }
+    .settings.open .toggle-icon { transform: rotate(180deg); }
+
+    .settings-body {
+      display: none;
+      padding: 1rem;
+    }
+    .settings.open .settings-body { display: block; }
+
+    /* Player count */
+    .count-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .count-row label {
+      font-size: 0.82rem;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+    .count-btns {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .count-btn {
+      width: 2.2rem; height: 2.2rem;
+      border: 1px solid var(--dim);
+      background: transparent;
+      color: var(--dim);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.6rem;
+      cursor: pointer;
+      transition: border-color 0.1s, color 0.1s, background 0.1s;
+    }
+    .count-btn:hover { border-color: var(--green); color: var(--green); }
+    .count-btn.active {
+      border-color: var(--green);
+      background: var(--green);
+      color: var(--bg);
+    }
+
+    /* Key tables */
+    .players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .player-keys {
+      border: 1px solid var(--border);
+    }
+    .player-keys.inactive { opacity: 0.35; pointer-events: none; }
+
+    .player-keys .pk-head {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.5rem;
+      color: var(--yellow);
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: 0.1em;
+    }
+
+    .pk-row {
       display: flex;
       justify-content: space-between;
-      font-size: 0.78rem;
-      color: var(--dim);
-      margin-bottom: 0.35rem;
+      align-items: center;
+      padding: 0.3rem 0.75rem;
+      border-bottom: 1px solid #151515;
     }
-    .ctrl-row .action { color: var(--text); }
+    .pk-row:last-child { border-bottom: none; }
+    .pk-row .action { font-size: 0.78rem; color: var(--dim); }
 
-    kbd {
-      display: inline-block;
-      background: #1a1a1a;
-      border: 1px solid #333;
+    .key-btn {
+      background: #161616;
+      border: 1px solid #2a2a2a;
       color: var(--green);
-      padding: 0.1rem 0.4rem;
       font-family: 'Courier New', monospace;
       font-size: 0.72rem;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      min-width: 5rem;
+      text-align: center;
+      transition: border-color 0.1s;
     }
+    .key-btn:hover { border-color: var(--green); }
+    .key-btn.rebinding {
+      border-color: var(--yellow);
+      color: var(--yellow);
+      animation: blink 0.7s step-start infinite;
+    }
+    @keyframes blink { 50% { opacity: 0.3; } }
 
     /* ── INFO BOX ─────────────────────────────────────────────── */
     .info-box {
-      border: 1px solid #1e1e1e;
+      border: 1px solid var(--border);
       padding: 0.75rem 1rem;
       font-size: 0.8rem;
       color: var(--dim);
@@ -173,7 +246,7 @@
 
     /* ── FOOTER ───────────────────────────────────────────────── */
     footer {
-      border-top: 1px solid #1e1e1e;
+      border-top: 1px solid var(--border);
       padding: 1rem 1.5rem;
       text-align: center;
       font-size: 0.75rem;
@@ -185,20 +258,19 @@
     /* ── RESPONSIVE ───────────────────────────────────────────── */
     @media (max-width: 660px) {
       canvas { width: 100%; height: auto; }
-      .controls { flex-direction: column; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ── TOP BAR ──────────────────────────────────────────── -->
   <header class="topbar">
     <a class="logo" href="/">OPENLIERO</a>
     <a class="back" href="/">← back to site</a>
   </header>
 
-  <!-- ── GAME CANVAS ──────────────────────────────────────── -->
   <main>
+
+    <!-- ── CANVAS ───────────────────────────────────────────── -->
     <div class="canvas-wrap">
       <canvas id="canvas" width="640" height="400"></canvas>
       <div id="overlay">
@@ -207,55 +279,203 @@
       </div>
     </div>
 
-    <!-- ── CONTROLS ─────────────────────────────────────── -->
-    <div class="controls">
-      <div class="ctrl-block">
-        <h3>// PLAYER 1</h3>
-        <div class="ctrl-row"><span class="action">Move</span><span><kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Fire</span><span><kbd>LCtrl</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Change weapon</span><span><kbd>LShift</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Jump</span><span><kbd>Space</kbd></span></div>
+    <!-- ── SETTINGS ─────────────────────────────────────────── -->
+    <div class="settings" id="settings">
+      <div class="settings-header" id="settings-toggle">
+        <h2>// SETTINGS &amp; CONTROLS</h2>
+        <span class="toggle-icon">▼</span>
       </div>
-      <div class="ctrl-block">
-        <h3>// PLAYER 2</h3>
-        <div class="ctrl-row"><span class="action">Move</span><span><kbd>J</kbd> <kbd>I</kbd> <kbd>K</kbd> <kbd>L</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Fire</span><span><kbd>Enter</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Change weapon</span><span><kbd>RShift</kbd></span></div>
-        <div class="ctrl-row"><span class="action">Jump</span><span><kbd>RCtrl</kbd></span></div>
+      <div class="settings-body">
+
+        <!-- Player count -->
+        <div class="count-row">
+          <label>Players:</label>
+          <div class="count-btns" id="count-btns">
+            <button class="count-btn active" data-n="2">2</button>
+            <button class="count-btn"        data-n="3">3</button>
+            <button class="count-btn"        data-n="4">4</button>
+          </div>
+          <span style="font-size:0.78rem; color:var(--dim)">Press <strong style="color:var(--text)">Enter</strong> or <strong style="color:var(--text)">Space</strong> in game to start · <strong style="color:var(--text)">Escape</strong> to menu</span>
+        </div>
+
+        <!-- Key tables (one per player) -->
+        <div class="players-grid" id="players-grid">
+          <!-- Generated by JS -->
+        </div>
+
       </div>
     </div>
 
     <div class="info-box">
-      Press <strong>Enter</strong> or <strong>Space</strong> on the menu to start · <strong>Escape</strong> to return to menu ·
-      Online multiplayer not yet available in the browser version — <a href="/">download</a> the desktop app for online play.
+      Online multiplayer is not yet available in the browser — <a href="/">download</a> the desktop app for online play via room codes.
     </div>
+
   </main>
 
-  <!-- ── FOOTER ───────────────────────────────────────────── -->
   <footer>
     <a href="https://github.com/Rubencora/liero" target="_blank" rel="noopener">GitHub</a>
     &nbsp;·&nbsp;
     OpenLiero — open-source Liero remake in Rust
   </footer>
 
-  <!-- ── WASM INIT ─────────────────────────────────────────── -->
   <script type="module">
-    import init from './pkg/liero_web.js';
+    import init, { set_player_count, set_player_key } from './pkg/liero_web.js';
 
-    async function run() {
-      const overlay = document.getElementById('overlay');
-      const msg     = document.getElementById('load-msg');
-      try {
-        await init();
-        // Hide overlay once WASM is running
-        overlay.classList.add('hidden');
-      } catch (e) {
-        msg.textContent = 'ERROR: ' + e;
-        console.error('[liero]', e);
-      }
+    // ── Default keymaps (mirror Rust defaults) ────────────────────────────
+    const ACTIONS   = ['Left', 'Right', 'Up', 'Down', 'Fire', 'Chg.Wpn', 'Jump'];
+    const DEFAULTS  = [
+      ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ControlLeft','ShiftLeft','Space'],
+      ['KeyJ','KeyL','KeyI','KeyK','Enter','ShiftRight','ControlRight'],
+      ['KeyA','KeyD','KeyW','KeyS','KeyQ','KeyE','Tab'],
+      ['Numpad4','Numpad6','Numpad8','Numpad2','Numpad0','NumpadDecimal','NumpadEnter'],
+    ];
+    const COLORS    = ['#39ff14','#ffcc00','#ff6b6b','#6baeff'];
+    const P_NAMES   = ['PLAYER 1','PLAYER 2','PLAYER 3','PLAYER 4'];
+
+    // Live keymap state (same order as DEFAULTS)
+    const keymaps = DEFAULTS.map(km => [...km]);
+
+    // Pretty-print a code string like "ArrowLeft" → "← Arrow"
+    function prettyCode(code) {
+      const map = {
+        ArrowLeft:'← Arrow', ArrowRight:'→ Arrow', ArrowUp:'↑ Arrow', ArrowDown:'↓ Arrow',
+        ControlLeft:'L Ctrl', ControlRight:'R Ctrl',
+        ShiftLeft:'L Shift', ShiftRight:'R Shift',
+        AltLeft:'L Alt', AltRight:'R Alt',
+        Enter:'Enter', NumpadEnter:'Num Enter',
+        Space:'Space', Tab:'Tab', Escape:'Escape',
+        Numpad0:'Num 0', Numpad1:'Num 1', Numpad2:'Num 2', Numpad3:'Num 3',
+        Numpad4:'Num 4', Numpad5:'Num 5', Numpad6:'Num 6', Numpad7:'Num 7',
+        Numpad8:'Num 8', Numpad9:'Num 9', NumpadDecimal:'Num .', NumpadEnter:'Num ↵',
+        NumpadAdd:'Num +', NumpadSubtract:'Num -', NumpadMultiply:'Num *', NumpadDivide:'Num /',
+      };
+      if (map[code]) return map[code];
+      if (code.startsWith('Key')) return code.slice(3);
+      if (code.startsWith('Digit')) return code.slice(5);
+      if (code.startsWith('F')) return code;
+      return code;
     }
 
-    run();
+    // ── Build settings UI ─────────────────────────────────────────────────
+    let playerCount = 2;
+    let wasmReady   = false;
+    let rebinding   = null; // { player, action, btn }
+
+    function buildPlayerGrid() {
+      const grid = document.getElementById('players-grid');
+      grid.innerHTML = '';
+      for (let pi = 0; pi < 4; pi++) {
+        const active = pi < playerCount;
+        const block = document.createElement('div');
+        block.className = 'player-keys' + (active ? '' : ' inactive');
+        block.id = `player-block-${pi}`;
+
+        let html = `<div class="pk-head" style="color:${COLORS[pi]}">${P_NAMES[pi]}</div>`;
+        ACTIONS.forEach((action, ai) => {
+          const code = keymaps[pi][ai];
+          html += `
+            <div class="pk-row">
+              <span class="action">${action}</span>
+              <button class="key-btn" data-pi="${pi}" data-ai="${ai}">${prettyCode(code)}</button>
+            </div>`;
+        });
+        block.innerHTML = html;
+        grid.appendChild(block);
+      }
+
+      // Attach rebind handlers
+      grid.querySelectorAll('.key-btn').forEach(btn => {
+        btn.addEventListener('click', () => startRebind(btn));
+      });
+    }
+
+    function startRebind(btn) {
+      if (rebinding) cancelRebind();
+      rebinding = {
+        pi: parseInt(btn.dataset.pi),
+        ai: parseInt(btn.dataset.ai),
+        btn,
+      };
+      btn.classList.add('rebinding');
+      btn.textContent = 'PRESS KEY…';
+    }
+
+    function cancelRebind() {
+      if (!rebinding) return;
+      const { pi, ai, btn } = rebinding;
+      btn.classList.remove('rebinding');
+      btn.textContent = prettyCode(keymaps[pi][ai]);
+      rebinding = null;
+    }
+
+    window.addEventListener('keydown', e => {
+      if (!rebinding) return;
+      // Ignore modifier-only presses
+      if (['Meta','CapsLock'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const { pi, ai, btn } = rebinding;
+      const code = e.code;
+
+      keymaps[pi][ai] = code;
+      btn.classList.remove('rebinding');
+      btn.textContent = prettyCode(code);
+      rebinding = null;
+
+      if (wasmReady) {
+        set_player_key(pi, ai, code);
+      }
+    }, { capture: true });
+
+    // Click anywhere else → cancel rebind
+    window.addEventListener('click', e => {
+      if (rebinding && !e.target.classList.contains('key-btn')) cancelRebind();
+    });
+
+    // ── Player count selector ────────────────────────────────────────────
+    document.getElementById('count-btns').addEventListener('click', e => {
+      const btn = e.target.closest('.count-btn');
+      if (!btn) return;
+      playerCount = parseInt(btn.dataset.n);
+      document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      buildPlayerGrid();
+      if (wasmReady) set_player_count(playerCount);
+    });
+
+    // ── Settings accordion ───────────────────────────────────────────────
+    document.getElementById('settings-toggle').addEventListener('click', () => {
+      document.getElementById('settings').classList.toggle('open');
+    });
+
+    // ── WASM init ────────────────────────────────────────────────────────
+    buildPlayerGrid(); // render before WASM loads
+
+    const overlay  = document.getElementById('overlay');
+    const loadMsg  = document.getElementById('load-msg');
+
+    window.addEventListener('liero-ready', () => {
+      // Renderer is up — hide the loading overlay
+      overlay.classList.add('hidden');
+    });
+
+    try {
+      await init();
+      wasmReady = true;
+
+      // Push current config to WASM
+      set_player_count(playerCount);
+      for (let pi = 0; pi < 4; pi++) {
+        for (let ai = 0; ai < 7; ai++) {
+          set_player_key(pi, ai, keymaps[pi][ai]);
+        }
+      }
+    } catch (e) {
+      loadMsg.textContent = 'ERROR: ' + e;
+      console.error('[liero]', e);
+    }
   </script>
+
 </body>
 </html>

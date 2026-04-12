@@ -25,7 +25,7 @@ wasm-bindgen         = "0.2"
 wasm-bindgen-futures = "0.4"
 
 # Web APIs
-web-sys = { version = "0.3", features = ["console"] }
+web-sys = { version = "0.3", features = ["console", "Document", "Window", "HtmlCanvasElement", "Event"] }
 console_error_panic_hook = "0.1"
 
 # winit — WASM support is built-in (no extra feature needed)
