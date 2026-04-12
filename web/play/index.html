@@ -79,20 +79,22 @@
       image-rendering: crisp-edges;
     }
 
-    /* Loading overlay */
+    /* Loading / click-to-play overlay */
     #overlay {
       position: absolute;
       inset: 0;
-      background: #000;
+      background: rgba(0,0,0,0.92);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 1rem;
       z-index: 10;
-      transition: opacity 0.5s;
+      cursor: default;
+      transition: opacity 0.4s;
     }
-    #overlay.hidden { opacity: 0; pointer-events: none; }
+    #overlay.clickable { cursor: pointer; }
+    #overlay.gone { opacity: 0; pointer-events: none; }
 
     .spinner {
       width: 2rem; height: 2rem;
@@ -101,6 +103,7 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
+    .spinner.hidden { display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     #load-msg {
@@ -108,7 +111,20 @@
       font-size: 0.55rem;
       color: var(--green);
       letter-spacing: 0.1em;
+      text-align: center;
+      line-height: 2;
     }
+
+    #click-hint {
+      display: none;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      color: var(--yellow);
+      letter-spacing: 0.1em;
+      animation: blink-slow 1.2s step-start infinite;
+    }
+    #click-hint.visible { display: block; }
+    @keyframes blink-slow { 50% { opacity: 0; } }
 
     /* ── SETTINGS PANEL ───────────────────────────────────────── */
     .settings {
@@ -272,10 +288,11 @@
 
     <!-- ── CANVAS ───────────────────────────────────────────── -->
     <div class="canvas-wrap">
-      <canvas id="canvas" width="640" height="400"></canvas>
+      <canvas id="canvas" width="640" height="400" tabindex="0"></canvas>
       <div id="overlay">
-        <div class="spinner"></div>
+        <div class="spinner" id="spinner"></div>
         <div id="load-msg">LOADING…</div>
+        <div id="click-hint">▶ CLICK TO PLAY</div>
       </div>
     </div>
 
@@ -319,7 +336,7 @@
   </footer>
 
   <script type="module">
-    import init, { set_player_count, set_player_key } from './pkg/liero_web.js';
+    import init, { set_player_count, set_player_key } from './pkg/liero_web.js?v=2';
 
     // ── Default keymaps (mirror Rust defaults) ────────────────────────────
     const ACTIONS   = ['Left', 'Right', 'Up', 'Down', 'Fire', 'Chg.Wpn', 'Jump'];
@@ -452,16 +469,34 @@
     // ── WASM init ────────────────────────────────────────────────────────
     buildPlayerGrid(); // render before WASM loads
 
-    const overlay  = document.getElementById('overlay');
-    const loadMsg  = document.getElementById('load-msg');
+    const overlay   = document.getElementById('overlay');
+    const spinner   = document.getElementById('spinner');
+    const loadMsg   = document.getElementById('load-msg');
+    const clickHint = document.getElementById('click-hint');
+    const canvas    = document.getElementById('canvas');
 
+    function showReady() {
+      spinner.classList.add('hidden');
+      loadMsg.textContent = 'PRESS ENTER OR SPACE\nTO START GAME';
+      clickHint.classList.add('visible');
+      overlay.classList.add('clickable');
+    }
+
+    function hideOverlay() {
+      overlay.classList.add('gone');
+      canvas.focus();
+    }
+
+    // Click anywhere on the overlay → hide it and focus the canvas
+    overlay.addEventListener('click', hideOverlay);
+
+    // Rust signals renderer ready via custom event
     window.addEventListener('liero-ready', () => {
-      // Renderer is up — hide the loading overlay
-      overlay.classList.add('hidden');
+      showReady();
     });
 
     try {
-      await init();
+      await init('./pkg/liero_web_bg.wasm?v=2');
       wasmReady = true;
 
       // Push current config to WASM
@@ -471,7 +506,16 @@
           set_player_key(pi, ai, keymaps[pi][ai]);
         }
       }
+
+      // Fallback: if liero-ready never fires, show ready state after 3s
+      setTimeout(() => {
+        if (!overlay.classList.contains('gone') && !overlay.classList.contains('clickable')) {
+          showReady();
+        }
+      }, 3000);
+
     } catch (e) {
+      spinner.classList.add('hidden');
       loadMsg.textContent = 'ERROR: ' + e;
       console.error('[liero]', e);
     }
