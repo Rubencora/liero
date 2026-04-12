@@ -5,10 +5,13 @@
 //!
 //! # Usage
 //!
-//!   replay-diff [TC_PATH] [N_FRAMES] [SEED]
+//!   replay-diff [TC_PATH] [N_FRAMES] [SEED] [--debug-desync]
 //!
 //! Defaults: TC_PATH = ../TC/openliero (relative to CWD),
 //!           N_FRAMES = 1000, SEED = 42.
+//!
+//! With `--debug-desync`, writes `rust_crcs.csv` after the run with columns:
+//!   frame, total, worms, wobjects, nobjects
 //!
 //! # Sync strategy
 //! After `sim_start_game`, the C++ sim exports its full state via
@@ -113,12 +116,15 @@ fn ffi_to_exported(ffi: &FfiState) -> ExportedState {
 // ---------------------------------------------------------------------------
 
 fn main() -> anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
-    let tc_path_str: String = args.next().unwrap_or_else(default_tc_path);
-    let n_frames: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(1000);
-    let seed: u32       = args.next().and_then(|s| s.parse().ok()).unwrap_or(42);
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let debug_desync = raw_args.iter().any(|a| a == "--debug-desync");
+    let mut positional = raw_args.iter().filter(|a| *a != "--debug-desync");
 
-    println!("replay-diff: TC='{tc_path_str}'  frames={n_frames}  seed={seed}");
+    let tc_path_str: String = positional.next().cloned().unwrap_or_else(default_tc_path);
+    let n_frames: usize = positional.next().and_then(|s| s.parse().ok()).unwrap_or(1000);
+    let seed: u32       = positional.next().and_then(|s| s.parse().ok()).unwrap_or(42);
+
+    println!("replay-diff: TC='{tc_path_str}'  frames={n_frames}  seed={seed}  debug-desync={debug_desync}");
     println!();
 
     // ── C++ sim ──────────────────────────────────────────────────────────
@@ -180,6 +186,10 @@ fn main() -> anyhow::Result<()> {
     let mut mismatches = 0usize;
     let mut first_mismatch: Option<usize> = None;
 
+    // Per-frame CRC records for --debug-desync.
+    struct CrcRecord { frame: usize, total: u64, worms: u64, wobjects: u64, nobjects: u64 }
+    let mut crc_records: Vec<CrcRecord> = if debug_desync { Vec::with_capacity(n_frames) } else { Vec::new() };
+
     // Pre-allocate level pixel buffer for per-frame re-sync.
     let level_buf_size = (lw * lh) as usize;
     let mut sync_pixels: Vec<u8> = vec![0u8; level_buf_size];
@@ -206,6 +216,17 @@ fn main() -> anyhow::Result<()> {
         // Advance Rust sim.
         rust_sim.step(&[0u32; 4][..exported.num_worms as usize]);
         let rust_csum = rust_sim.checksum();
+
+        // Record sub-checksums for --debug-desync.
+        if debug_desync {
+            crc_records.push(CrcRecord {
+                frame,
+                total:    rust_csum,
+                worms:    rust_sim.worm_checksum(),
+                wobjects: rust_sim.wobject_checksum(),
+                nobjects: rust_sim.nobject_checksum(),
+            });
+        }
 
         // Log bonus state for frames near first mismatch.
         if first_mismatch.is_some() && frame <= first_mismatch.unwrap() + 3 {
@@ -267,6 +288,19 @@ fn main() -> anyhow::Result<()> {
 
     // ── Cleanup ──────────────────────────────────────────────────────────
     unsafe { sim_destroy(cpp_sim) };
+
+    // ── Debug-desync CSV ─────────────────────────────────────────────────
+    if debug_desync {
+        use std::io::Write as _;
+        let path = "rust_crcs.csv";
+        let mut f = std::fs::File::create(path)
+            .map_err(|e| anyhow::anyhow!("creating {path}: {e}"))?;
+        writeln!(f, "frame,total,worms,wobjects,nobjects")?;
+        for r in &crc_records {
+            writeln!(f, "{},{},{},{},{}", r.frame, r.total, r.worms, r.wobjects, r.nobjects)?;
+        }
+        println!("debug-desync: wrote {path} ({} rows)", crc_records.len());
+    }
 
     // ── Report ───────────────────────────────────────────────────────────
     println!();

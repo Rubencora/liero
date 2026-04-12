@@ -261,6 +261,20 @@ El proyecto avanza en 4 fases:
 
 **Implementado:** Smooth camera: `Viewport` con `target_cam_x/y` + lerp `dx/8` (snap cuando ≤1px). Replay system: formato binario `LREP` (magic+seed+frames), `ReplayData` + `PlaybackState`, F5=grabar/parar, F7=reproducir, Space=pausar, →=step, ←=rewind. `default_tc_path()` busca TC junto al exe, luego bundle macOS `Contents/Resources`, luego fallback CWD. `Game::seed` expuesto. CI: jobs para macos-14 (universal binary ARM64+x86_64), ubuntu-22.04, windows-latest; job `publish` crea GitHub Release + push a Itch.io via butler (solo en tags `v*`). Makefile: `package-macos` → `OpenLiero.app` + zip; `package-linux` → tar.gz.
 
+### Sprint 25–26 — Paridad C++/Rust + Dirt War + CI Desync
+
+| # | Tarea | Estado |
+|---|-------|--------|
+| S25-01 | Attract parity: `attract_radius`/`attract_force` procesados en `step_wobjects()` | ✅ |
+| S25-02 | `on_expire_teleport` parity: teletransporta owner al expirar el proyectil | ✅ |
+| S25-03 | CI workflow: `.github/workflows/ci.yml` — build + tests en push/PR | ✅ |
+| S26-01 | Sub-checksums FNV-1a: `worm_checksum()`, `wobject_checksum()`, `nobject_checksum()` | ✅ |
+| S26-02 | `--debug-desync` en `replay-diff`: escribe `rust_crcs.csv` con columnas `frame,total,worms,wobjects,nobjects` | ✅ |
+| S26-03 | Dirt War mode (`GameMode::DirtWar`, `dirt_scores: [i32;4]`, `apply_dirt_deposit()`) | ✅ |
+| S26-04 | Swap Gun (W14): `worm_swap: bool` en `Weapon`, intercambia posiciones owner↔target sin daño | ✅ |
+
+**Implementado:** Attract: en `step_wobjects()` se aplica fuerza lineal hacia el proyectil a wobjects, nobjects y worms dentro de `attract_radius`. `on_expire_teleport`: cuando `time_left < 0`, teletransporta al owner al punto del proyectil y lo retira sin explosión. CI workflow activa en push/PR: instala deps de sistema, compila workspace Rust, corre tests. Sub-checksums FNV-1a independientes para worms/wobjects/nobjects. `replay-diff --debug-desync` escribe `rust_crcs.csv` por frame. `GameMode::DirtWar { time_limit }` con `dirt_scores` por worm; `apply_dirt_deposit()` rellena píxeles de fondo; ganador = mayor score al timeout. Swap Gun: `TC/openliero/weapons/swap_gun.cfg` con `wormSwap=true, hitDamage=0`; en colisión worm intercambia `pos` y pone `vel=0` sin daño.
+
 ---
 
 ## Backlog / Sin Sprint Asignado
@@ -270,9 +284,7 @@ El proyecto avanza en 4 fases:
 | Animación de victoria configurable | 0 | Cosmético |
 | Sprint boots / Kevlar / Double Jump power-ups | 1 | Nuevos bonuses |
 | Race mode (checkpoints, 3 vueltas) | 1 | Requiere diseño de niveles lineales |
-| Dirt War mode (requiere W10 Dirt Cannon) | 1 | Depende de S7-04 |
 | Black Hole Grenade (W11) | 1 | Succión + explosión |
-| Swap Gun (W14) | 1 | `onWormHit` intercambia posición |
 | Tesla Coil (W15) | 1 | Sobject con damage-area tick |
 | Boomerang (W17) | 1 | `shotType=boomerang` |
 | Gauss Sniper (W12) | 1 | Charge-up 4 etapas |
@@ -310,5 +322,7 @@ Un sprint se considera **done** cuando:
 | S17–18 | 5 | 5 | 5 pts/sprint (R2: nivel procedural, audio, modos de juego, rollback net) |
 | S19–20 | 5 | 5 | 5 pts/sprint (R3: WASM build, relay server, TC sync hash, Makefile web target) |
 | S21–22 | 4 | 3 | 3 pts/sprint (Lua modding, tc-validator, MkDocs; wasmtime diferido) |
+| S23–24 | 5 | 5 | 5 pts/sprint (packaging, replay, smooth camera, CI release, Itch.io) |
+| S25–26 | 11 | 11 | 11 pts/sprint (attract parity, on_expire_teleport, CI workflow, debug-desync, Dirt War, Swap Gun) |
 
 *(1 punto ≈ cambio de complejidad media, ~4h de trabajo efectivo)*
