@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenLiero — Fast-Paced Worm Combat</title>
+  <meta name="description" content="OpenLiero is an open-source remake of the classic Liero game. Local and online multiplayer via room codes. Download for macOS, Linux, and Windows.">
+  <meta property="og:title" content="OpenLiero">
+  <meta property="og:description" content="Fast-paced worm combat. Open-source, local & online multiplayer.">
+  <meta property="og:url" content="https://liero.byruben.io">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:  #39ff14;
+      --yellow: #ffcc00;
+      --bg:     #0a0a0a;
+      --surface:#111;
+      --text:   #cccccc;
+      --dim:    #666;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* ── HERO ─────────────────────────────────────────────────── */
+    .hero {
+      padding: 5rem 0 3rem;
+      text-align: center;
+    }
+
+    .hero h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(1.4rem, 5vw, 2.6rem);
+      color: var(--green);
+      letter-spacing: 0.05em;
+      text-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero .tagline {
+      font-size: 1rem;
+      color: var(--text);
+      max-width: 480px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .ascii-divider {
+      color: var(--green);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      opacity: 0.5;
+      margin: 2rem 0;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    /* ── DOWNLOADS ─────────────────────────────────────────────── */
+    .downloads {
+      padding: 3rem 0;
+      text-align: center;
+    }
+
+    .downloads h2 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1rem;
+      color: var(--yellow);
+      margin-bottom: 2rem;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      border: 2px solid var(--green);
+      color: var(--green);
+      padding: 1.1rem 2rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      font-weight: bold;
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+      min-width: 200px;
+    }
+
+    .btn:hover {
+      background: var(--green);
+      color: var(--bg);
+      box-shadow: 0 0 18px rgba(57, 255, 20, 0.5);
+      text-decoration: none;
+    }
+
+    .btn .platform { font-size: 1.2rem; }
+    .btn .label    { font-family: 'Press Start 2P', monospace; font-size: 0.6rem; }
+    .btn .fmt      { font-size: 0.75rem; color: var(--dim); }
+    .btn:hover .fmt { color: var(--bg); }
+
+    /* ── HOW TO PLAY ───────────────────────────────────────────── */
+    .howto {
+      padding: 3rem 0;
+      background: var(--surface);
+      border-top: 1px solid #1e1e1e;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    .howto h2 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1rem;
+      color: var(--yellow);
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    .steps {
+      list-style: none;
+      counter-reset: step;
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.4rem;
+      align-items: flex-start;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 2rem;
+      height: 2rem;
+      background: var(--green);
+      color: var(--bg);
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.65rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 0.15rem;
+    }
+
+    .steps li span { flex: 1; }
+
+    .code-chip {
+      display: inline-block;
+      background: #1a2a1a;
+      border: 1px solid var(--green);
+      color: var(--green);
+      padding: 0.1rem 0.5rem;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+    }
+
+    .info-box {
+      margin-top: 2rem;
+      border: 1px solid #2a2a2a;
+      padding: 1rem 1.2rem;
+      font-size: 0.85rem;
+      color: var(--dim);
+      max-width: 580px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .info-box::before {
+      content: '> ';
+      color: var(--green);
+    }
+
+    /* ── ABOUT ─────────────────────────────────────────────────── */
+    .about {
+      padding: 3rem 0;
+      text-align: center;
+    }
+
+    .about h2 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1rem;
+      color: var(--yellow);
+      margin-bottom: 1.5rem;
+    }
+
+    .about p {
+      max-width: 580px;
+      margin: 0 auto 1rem;
+      color: var(--text);
+    }
+
+    .badge-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .badge {
+      border: 1px solid #333;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+      color: var(--dim);
+    }
+
+    /* ── FOOTER ─────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid #1e1e1e;
+      padding: 2rem 0;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--dim);
+    }
+
+    footer .links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    footer a { color: var(--dim); }
+    footer a:hover { color: var(--green); }
+
+    /* ── RESPONSIVE ─────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .btn { min-width: 100%; }
+      .btn-group { flex-direction: column; }
+      .hero { padding: 3rem 0 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── HERO ─────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="container">
+      <h1>OPENLIERO</h1>
+      <p class="tagline">
+        Fast-paced worm combat, reborn in Rust.<br>
+        Local split-screen &amp; online multiplayer via room codes.
+      </p>
+      <div class="ascii-divider">
+        ═══════════════════════════════════════════════════════════════════════
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DOWNLOADS ─────────────────────────────────────── -->
+  <section class="downloads">
+    <div class="container">
+      <h2>// DOWNLOAD</h2>
+      <div class="btn-group">
+        <a class="btn"
+           href="https://github.com/Rubencora/liero/releases/latest/download/OpenLiero-macOS.zip"
+           download>
+          <span class="platform"></span>
+          <span class="label">macOS</span>
+          <span class="fmt">Universal (ARM64 + x86_64) · .zip</span>
+        </a>
+        <a class="btn"
+           href="https://github.com/Rubencora/liero/releases/latest/download/OpenLiero-linux.tar.gz"
+           download>
+          <span class="platform">🐧</span>
+          <span class="label">Linux</span>
+          <span class="fmt">x86_64 · .tar.gz</span>
+        </a>
+        <a class="btn"
+           href="https://github.com/Rubencora/liero/releases/latest/download/OpenLiero-windows.zip"
+           download>
+          <span class="platform">🪟</span>
+          <span class="label">Windows</span>
+          <span class="fmt">x86_64 · .zip</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW TO PLAY ONLINE ──────────────────────────── -->
+  <section class="howto">
+    <div class="container">
+      <h2>// HOW TO PLAY ONLINE</h2>
+      <ol class="steps">
+        <li>
+          <span>Download and launch <strong>OpenLiero</strong> on both machines.</span>
+        </li>
+        <li>
+          <span>
+            The <strong>host</strong> selects <strong>HOST ONLINE</strong> from the main menu.
+            A 6-letter room code appears — like <span class="code-chip">XKRMQP</span>.
+          </span>
+        </li>
+        <li>
+          <span>Share the code with your friend via chat, voice, or any way you like.</span>
+        </li>
+        <li>
+          <span>
+            Your friend selects <strong>JOIN ONLINE</strong>, types the code, and presses Enter.
+          </span>
+        </li>
+        <li>
+          <span>
+            The relay server at <code>liero.byruben.io</code> pairs you automatically.
+            The game starts immediately — <strong>no port forwarding required</strong>.
+          </span>
+        </li>
+      </ol>
+      <p class="info-box">
+        Both players must use the same game version. The relay handles NAT traversal;
+        all game traffic goes directly between players (peer-to-peer UDP with rollback netcode).
+      </p>
+    </div>
+  </section>
+
+  <!-- ── ABOUT ─────────────────────────────────────────── -->
+  <section class="about">
+    <div class="container">
+      <h2>// ABOUT</h2>
+      <p>
+        OpenLiero is a faithful open-source recreation of Liero (1998) by Mets&auml;nEl&auml;imet,
+        rewritten from scratch in Rust. It supports up to 4 players local split-screen,
+        7 game modes including Last Man Standing, Team Deathmatch, King of the Hill,
+        Bomb Tag, Zombie, Juggernaut, and Dirt War.
+      </p>
+      <p>
+        Online multiplayer uses UDP rollback netcode (GGPO-style) for low-latency play
+        even across long distances.
+      </p>
+      <div class="badge-row">
+        <span class="badge">Rust 🦀</span>
+        <span class="badge">wgpu renderer</span>
+        <span class="badge">rollback netcode</span>
+        <span class="badge">open-source</span>
+        <span class="badge">54 weapons</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ─────────────────────────────────────────── -->
+  <footer>
+    <div class="container">
+      <div class="links">
+        <a href="https://github.com/Rubencora/liero" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://rubencora.itch.io/openliero" target="_blank" rel="noopener">itch.io</a>
+      </div>
+      <p>OpenLiero is not affiliated with the original Liero by Mets&auml;nEl&auml;imet.</p>
+    </div>
+  </footer>
+
+</body>
+</html>
