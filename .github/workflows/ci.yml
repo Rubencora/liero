@@ -1,0 +1,60 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # System dependencies for SDL2, C++, and FFmpeg
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libgl1-mesa-dev \
+            cmake \
+            build-essential \
+            libswresample-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswscale-dev
+
+      # Build C++ library first
+      - name: Build C++ liero_sim library
+        run: |
+          mkdir -p build
+          cd build
+          cmake ..
+          cmake --build . --target liero_sim
+
+      # Setup Rust
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Cache cargo dependencies
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            openliero-rs/target
+          key: ci-cargo-${{ hashFiles('openliero-rs/Cargo.lock') }}
+          restore-keys: ci-cargo-
+
+      # Build Rust workspace
+      - name: Build Rust workspace
+        run: cargo build --manifest-path openliero-rs/Cargo.toml
+        env:
+          LIERO_SIM_LIB: ${{ github.workspace }}/build
+
+      # Run tests
+      - name: Run Rust tests
+        run: cargo test --manifest-path openliero-rs/Cargo.toml
+        env:
+          LIERO_SIM_LIB: ${{ github.workspace }}/build

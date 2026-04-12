@@ -15,7 +15,7 @@ use crate::fixed::{Fixed, FixedVec};
 use crate::level::{Level, WIDTH, HEIGHT};
 use crate::levelgen;
 use crate::material::Material;
-use crate::math::COSSIN_TABLE;
+use crate::math::{COSSIN_TABLE, vector_length};
 use crate::nobject::NObject;
 use crate::rand::Mwc;
 use crate::worm::{Worm, react};
@@ -1255,6 +1255,68 @@ impl Game {
                 self.wobjects[i].vel.y.0 += weapon.gravity;
             }
 
+            // ── 3.5. Attraction/repulsion force ────────────────────────────────
+            if !in_terrain && weapon.attract_radius > 0 && weapon.attract_force != 0 {
+                // Copy values to avoid borrow conflicts.
+                let pos_i = self.wobjects[i].pos;
+                let attract_radius = weapon.attract_radius;
+                let attract_force = weapon.attract_force;
+
+                // Attract wobjects.
+                for j in 0..self.wobjects.len() {
+                    if i == j { continue; }
+                    let pos_j = self.wobjects[j].pos;
+                    let dx = pos_j.x.to_int() - pos_i.x.to_int();
+                    let dy = pos_j.y.to_int() - pos_i.y.to_int();
+                    let dist = vector_length(dx, dy);
+
+                    if dist > 0 && dist < attract_radius {
+                        // force = attract_force * delta / (1000 * dist)
+                        let force_x = (attract_force as i64).wrapping_mul(dx as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        let force_y = (attract_force as i64).wrapping_mul(dy as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        self.wobjects[j].vel.x.0 = self.wobjects[j].vel.x.0.wrapping_add(force_x as i32);
+                        self.wobjects[j].vel.y.0 = self.wobjects[j].vel.y.0.wrapping_add(force_y as i32);
+                    }
+                }
+
+                // Attract nobjects.
+                for j in 0..self.nobjects.len() {
+                    let pos_j = self.nobjects[j].pos;
+                    let dx = pos_j.x.to_int() - pos_i.x.to_int();
+                    let dy = pos_j.y.to_int() - pos_i.y.to_int();
+                    let dist = vector_length(dx, dy);
+
+                    if dist > 0 && dist < attract_radius {
+                        let force_x = (attract_force as i64).wrapping_mul(dx as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        let force_y = (attract_force as i64).wrapping_mul(dy as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        self.nobjects[j].vel.x.0 = self.nobjects[j].vel.x.0.wrapping_add(force_x as i32);
+                        self.nobjects[j].vel.y.0 = self.nobjects[j].vel.y.0.wrapping_add(force_y as i32);
+                    }
+                }
+
+                // Attract living worms.
+                for j in 0..self.worms.len() {
+                    if !self.worms[j].alive { continue; }
+                    let pos_j = self.worms[j].pos;
+                    let dx = pos_j.x.to_int() - pos_i.x.to_int();
+                    let dy = pos_j.y.to_int() - pos_i.y.to_int();
+                    let dist = vector_length(dx, dy);
+
+                    if dist > 0 && dist < attract_radius {
+                        let force_x = (attract_force as i64).wrapping_mul(dx as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        let force_y = (attract_force as i64).wrapping_mul(dy as i64)
+                            / (1000i64 * dist as i64) as i32 as i64;
+                        self.worms[j].vel.x.0 = self.worms[j].vel.x.0.wrapping_add(force_x as i32);
+                        self.worms[j].vel.y.0 = self.worms[j].vel.y.0.wrapping_add(force_y as i32);
+                    }
+                }
+            }
+
             // ── 4. Worm hit detection ─────────────────────────────────────────
             if !do_explode && !do_remove && (weapon.hit_damage > 0 || weapon.worm_collide) {
                 let owner_idx = self.wobjects[i].owner_idx;
@@ -1307,7 +1369,20 @@ impl Game {
             if !do_explode && !do_remove && weapon.time_to_explo > 0 {
                 self.wobjects[i].time_left -= 1;
                 if self.wobjects[i].time_left < 0 {
-                    do_explode = true;
+                    // Check for on_expire_teleport.
+                    if weapon.on_expire_teleport {
+                        let owner = self.wobjects[i].owner_idx;
+                        if owner < self.worms.len() && self.worms[owner].alive {
+                            let teleport_pos = self.wobjects[i].pos;
+                            self.worms[owner].pos = teleport_pos;
+                            self.worms[owner].vel = FixedVec::ZERO;
+                            do_remove = true;
+                        } else {
+                            do_explode = true;
+                        }
+                    } else {
+                        do_explode = true;
+                    }
                 }
             }
 
