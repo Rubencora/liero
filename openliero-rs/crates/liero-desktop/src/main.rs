@@ -52,7 +52,7 @@ use winit::window::{Window, WindowId};
 ///   seed      u32
 ///   num_worms u32
 ///   tc_hash   u64
-///   mode      u32  (0=LMS, 1=TDM, 2=KotH, 3=BombTag, 4=Zombie, 5=Juggernaut)
+///   mode      u32  (0=LMS, 1=TDM, 2=KotH, 3=BombTag, 4=Zombie, 5=Juggernaut, 6=DirtWar)
 ///   frames    N × [u32; 4]  (16 bytes per frame)
 struct ReplayData {
     seed:      u32,
@@ -127,6 +127,7 @@ const MODE_NAMES: &[&str] = &[
     "BOMB TAG",
     "ZOMBIE MODE",
     "JUGGERNAUT",
+    "DIRT WAR",
 ];
 
 fn mode_from_idx(idx: usize) -> GameMode {
@@ -137,18 +138,20 @@ fn mode_from_idx(idx: usize) -> GameMode {
         3 => GameMode::BombTag    { fuse: 600 },
         4 => GameMode::ZombieMode,
         5 => GameMode::Juggernaut,
+        6 => GameMode::DirtWar    { time_limit: 18000 }, // 5 min @ 60 fps
         _ => GameMode::LastManStanding,
     }
 }
 
 fn mode_to_u32(mode: &GameMode) -> u32 {
     match mode {
-        GameMode::LastManStanding => 0,
-        GameMode::TeamDeathmatch  => 1,
-        GameMode::KingOfHill { .. } => 2,
-        GameMode::BombTag    { .. } => 3,
-        GameMode::ZombieMode  => 4,
-        GameMode::Juggernaut  => 5,
+        GameMode::LastManStanding    => 0,
+        GameMode::TeamDeathmatch     => 1,
+        GameMode::KingOfHill { .. }  => 2,
+        GameMode::BombTag    { .. }  => 3,
+        GameMode::ZombieMode         => 4,
+        GameMode::Juggernaut         => 5,
+        GameMode::DirtWar    { .. }  => 6,
     }
 }
 

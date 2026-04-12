@@ -45,6 +45,7 @@ pub struct GameSnapshot {
     pub level_pixels: Vec<u8>,
     pub koth_ticks:   [i32; 4],
     pub bomb_timer:   i32,
+    pub dirt_scores:  [i32; 4],
 }
 
 // ── Sound events ─────────────────────────────────────────────────────────────
@@ -83,6 +84,8 @@ pub enum GameMode {
     ZombieMode,
     /// One worm is the Juggernaut (×3 HP, ×2 dmg dealt, ×½ received).  Crown passes on death.
     Juggernaut,
+    /// Deposit dirt with Dirt Cannon — highest score when time runs out wins.
+    DirtWar { time_limit: i32 },
 }
 
 impl Default for GameMode {
@@ -183,6 +186,8 @@ pub struct Game {
     pub koth_ticks:   [i32; 4],
     /// BombTag: frames remaining on the fuse.  0 when BombTag is not active.
     pub bomb_timer:   i32,
+    /// DirtWar: dirt tiles deposited per worm.
+    pub dirt_scores:  [i32; 4],
 
     // ── Material palette cache ───────────────────────────────────────────────
     /// Material flags per palette index, derived from `tc.data.constants.materials`.
@@ -245,6 +250,7 @@ impl Game {
             mode:         GameMode::default(),
             koth_ticks:   [0; 4],
             bomb_timer:   0,
+            dirt_scores:  [0; 4],
             tc_materials,
             tc,
         }
@@ -975,6 +981,52 @@ impl Game {
         }
     }
 
+    /// Deposit dirt into background pixels (inverse of `apply_dirt_effect`).
+    /// Used by weapons with `dirt_deposit = true` (e.g. Dirt Cannon).
+    fn apply_dirt_deposit(&mut self, dirt_effect: usize, x: i32, y: i32, rand_result: u32) {
+        use liero_data::{SPRITE_W, SPRITE_H, SPRITE_SIZE};
+
+        let Some(tex) = self.tc.data.constants.textures.get(dirt_effect) else { return; };
+        let sframe = tex.sframe as usize;
+        let rframe = tex.rframe as usize;
+
+        let n_frames = self.tc.large_sprites.len() / SPRITE_SIZE;
+        let tframe_idx = sframe + (rand_result as usize % rframe.max(1));
+        if tframe_idx >= n_frames { return; }
+
+        let clip_w = self.level.width as i32;
+        let clip_h = self.level.height as i32 - 1;
+
+        let mut bx = x;
+        let mut by = y;
+        let mut bw = SPRITE_W as i32;
+        let mut bh = SPRITE_H as i32;
+
+        if by < 0 { bh += by; by = 0; }
+        let bottom = by + bh - clip_h;
+        if bottom > 0 { bh -= bottom; }
+        if bx < 0 { bw += bx; bx = 0; }
+        let right = bx + bw - clip_w;
+        if right > 0 { bw -= right; }
+        if bw <= 0 || bh <= 0 { return; }
+
+        let tframe_data = &self.tc.large_sprites[tframe_idx * SPRITE_SIZE .. (tframe_idx + 1) * SPRITE_SIZE];
+
+        for y_ in 0..bh {
+            for x_ in 0..bw {
+                let lx = bx + x_;
+                let ly = by + y_;
+                // Only paint background (empty) pixels — don't overwrite existing terrain.
+                if self.level.material(lx, ly, &self.tc_materials).background() {
+                    let mx = lx as usize;
+                    let my = ly as usize;
+                    let new_pix = tframe_data[((my & 15) << 4) + (mx & 15)];
+                    self.level.set_pixel(lx, ly, new_pix);
+                }
+            }
+        }
+    }
+
     /// Port of `NObject::process()` for all live nobjects — `src/game/nobject.cpp:76`.
     ///
     /// Called BEFORE `++cycles` in the frame, same as C++ `processFrame` order:
@@ -1342,6 +1394,17 @@ impl Game {
                         // Damage.
                         self.do_damage(wi, weapon.hit_damage, owner_idx as i32);
 
+                        // Swap Gun: exchange positions of owner and hit worm.
+                        if weapon.worm_swap && owner_idx < self.worms.len() {
+                            let owner_pos = self.worms[owner_idx].pos;
+                            self.worms[owner_idx].pos = self.worms[wi].pos;
+                            self.worms[wi].pos        = owner_pos;
+                            self.worms[owner_idx].vel = FixedVec::ZERO;
+                            self.worms[wi].vel        = FixedVec::ZERO;
+                            do_remove = true;
+                            break 'worm_loop;
+                        }
+
                         // Blood particles from hit.
                         if weapon.blood_on_hit > 0 {
                             let blood_nobj_idx = self.tc.data.types.nobjects.iter()
@@ -1390,7 +1453,7 @@ impl Game {
             if do_explode {
                 let exp_x      = self.wobjects[i].pos.x.to_int();
                 let exp_y      = self.wobjects[i].pos.y.to_int();
-                let _owner_idx = self.wobjects[i].owner_idx as i32;
+                let owner_idx = self.wobjects[i].owner_idx;
 
                 // Create explosion sobject (applies damage, terrain destruction, splinters).
                 if let Some(ref exp_name) = weapon.create_on_exp.clone() {
@@ -1401,11 +1464,20 @@ impl Game {
                 }
 
                 // Direct dirt effect (weapon-level, not sobject).
-                if weapon.dirt_effect >= 0 && !weapon.dirt_deposit {
+                if weapon.dirt_effect >= 0 {
                     let de     = weapon.dirt_effect as usize;
                     let rframe = self.tc.data.constants.textures.get(de).map(|t| t.rframe as u32).unwrap_or(0);
                     let rand_r = self.rand.rand(rframe);
-                    self.apply_dirt_effect(de, exp_x - 7, exp_y - 7, rand_r);
+                    if weapon.dirt_deposit {
+                        // Deposit (fill) terrain instead of removing it.
+                        self.apply_dirt_deposit(de, exp_x - 7, exp_y - 7, rand_r);
+                        // DirtWar: credit the owner.
+                        if matches!(self.mode, GameMode::DirtWar { .. }) && owner_idx < 4 {
+                            self.dirt_scores[owner_idx] += 1;
+                        }
+                    } else {
+                        self.apply_dirt_effect(de, exp_x - 7, exp_y - 7, rand_r);
+                    }
                 }
 
                 // Splinters.
@@ -1971,6 +2043,46 @@ impl Game {
         h
     }
 
+    // ── Sub-checksums for debug-desync tooling ────────────────────────────────
+
+    /// FNV-1a checksum over worm positions, velocities, health, and alive state only.
+    pub fn worm_checksum(&self) -> u64 {
+        const FNV_PRIME: u64 = 1099511628211;
+        let mut h: u64 = 14695981039346656037;
+        macro_rules! mix { ($v:expr) => {{ h ^= ($v as u32) as u64; h = h.wrapping_mul(FNV_PRIME); }}; }
+        for w in &self.worms {
+            mix!(w.pos.x.0); mix!(w.pos.y.0);
+            mix!(w.vel.x.0); mix!(w.vel.y.0);
+            mix!(w.health);  mix!(w.alive as i32);
+        }
+        h
+    }
+
+    /// FNV-1a checksum over active wobject positions, velocities, and time_left.
+    pub fn wobject_checksum(&self) -> u64 {
+        const FNV_PRIME: u64 = 1099511628211;
+        let mut h: u64 = 14695981039346656037;
+        macro_rules! mix { ($v:expr) => {{ h ^= ($v as u32) as u64; h = h.wrapping_mul(FNV_PRIME); }}; }
+        for wo in &self.wobjects {
+            mix!(wo.pos.x.0); mix!(wo.pos.y.0);
+            mix!(wo.vel.x.0); mix!(wo.vel.y.0);
+            mix!(wo.time_left);
+        }
+        h
+    }
+
+    /// FNV-1a checksum over active nobject positions and velocities.
+    pub fn nobject_checksum(&self) -> u64 {
+        const FNV_PRIME: u64 = 1099511628211;
+        let mut h: u64 = 14695981039346656037;
+        macro_rules! mix { ($v:expr) => {{ h ^= ($v as u32) as u64; h = h.wrapping_mul(FNV_PRIME); }}; }
+        for no in &self.nobjects {
+            mix!(no.pos.x.0); mix!(no.pos.y.0);
+            mix!(no.vel.x.0); mix!(no.vel.y.0);
+        }
+        h
+    }
+
     // ── Rollback API ──────────────────────────────────────────────────────────
 
     /// Capture the current mutable state into a `GameSnapshot`.
@@ -1988,6 +2100,7 @@ impl Game {
             level_pixels: self.level.pixels().to_vec(),
             koth_ticks:   self.koth_ticks,
             bomb_timer:   self.bomb_timer,
+            dirt_scores:  self.dirt_scores,
         }
     }
 
@@ -1995,14 +2108,15 @@ impl Game {
     ///
     /// The `tc` and `tc_materials` fields are left unchanged (they are constant).
     pub fn restore_snapshot(&mut self, snap: &GameSnapshot) {
-        self.rand       = snap.rand.clone();
-        self.cycles     = snap.cycles;
-        self.worms      = snap.worms.clone();
-        self.wobjects   = snap.wobjects.clone();
-        self.nobjects   = snap.nobjects.clone();
-        self.bonuses    = snap.bonuses.clone();
-        self.koth_ticks = snap.koth_ticks;
-        self.bomb_timer = snap.bomb_timer;
+        self.rand        = snap.rand.clone();
+        self.cycles      = snap.cycles;
+        self.worms       = snap.worms.clone();
+        self.wobjects    = snap.wobjects.clone();
+        self.nobjects    = snap.nobjects.clone();
+        self.bonuses     = snap.bonuses.clone();
+        self.koth_ticks  = snap.koth_ticks;
+        self.bomb_timer  = snap.bomb_timer;
+        self.dirt_scores = snap.dirt_scores;
         self.level.restore_pixels(&snap.level_pixels);
         self.sound_events.clear();
     }
@@ -2125,6 +2239,22 @@ impl Game {
                     // Juggernaut wins.
                     let winner = self.worms.iter()
                         .position(|w| w.is_juggernaut)
+                        .unwrap_or(0);
+                    Some(GameResult::WormWins(winner))
+                } else {
+                    None
+                }
+            }
+
+            GameMode::DirtWar { time_limit } => {
+                // Time's up — worm with the most dirt deposited wins.
+                if self.cycles >= *time_limit {
+                    let n = self.worms.len().min(4);
+                    let winner = self.dirt_scores[..n]
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|(_, &s)| s)
+                        .map(|(i, _)| i)
                         .unwrap_or(0);
                     Some(GameResult::WormWins(winner))
                 } else {

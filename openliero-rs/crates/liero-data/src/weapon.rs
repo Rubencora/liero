@@ -93,6 +93,8 @@ pub struct Weapon {
     pub on_expire_teleport:    bool,
     pub dirt_deposit:          bool,
     pub pierce_dirt:           bool,
+    /// Swap positions of owner and hit worm on impact (no damage).
+    pub worm_swap:             bool,
 }
 
 impl Default for Weapon {
@@ -155,6 +157,7 @@ impl Default for Weapon {
             on_expire_teleport:    false,
             dirt_deposit:          false,
             pierce_dirt:           false,
+            worm_swap:             false,
         }
     }
 }
