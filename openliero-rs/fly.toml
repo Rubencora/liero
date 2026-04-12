@@ -1,0 +1,26 @@
+app = "openliero-relay"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.relay"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 7777
+
+  [[services.ports]]
+    port = 7777
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 7778
+
+  [[services.ports]]
+    port = 7778
+
+[checks]
+  [checks.alive]
+    type = "tcp"
+    port = 7777
+    interval = "30s"
+    timeout = "5s"

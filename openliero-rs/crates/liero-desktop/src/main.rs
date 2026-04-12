@@ -28,7 +28,7 @@ mod config;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use config::Config;
@@ -158,10 +158,24 @@ fn mode_to_u32(mode: &GameMode) -> u32 {
 // ── Game state machine ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum GameState {
     MainMenu   { cursor: usize },
     LocalSetup { mode_idx: usize },
+    /// Direct-IP host mode (advanced): just listen on a port.
     OnlineHost { port_str: String },
+    /// Relay host mode: background thread handles relay, shows room code.
+    RelayHost {
+        /// Room code shown to user once relay responds; None = still connecting.
+        room_code: Arc<Mutex<Option<String>>>,
+        /// Joiner's public IP once they join; None = still waiting.
+        joiner_result: Arc<Mutex<Option<Result<std::net::IpAddr, String>>>>,
+        /// The UDP port we're listening on.
+        udp_port: u16,
+    },
+    /// Relay join mode: user types 6-letter code.
+    RelayJoin { code: String },
+    /// Direct-IP join mode (advanced): user types IP:PORT.
     OnlineJoin { addr_str: String },
     Playing,
     GameOver   { msg: String },
@@ -348,6 +362,83 @@ impl App {
         self.game_state = GameState::Playing;
     }
 
+    fn start_relay_host(&mut self) {
+        let port: u16 = self.config.host_port.parse().unwrap_or(7777);
+        let bind_addr: SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
+
+        // Pre-open UDP socket so port is ready when peer connects.
+        let tc = self.load_tc();
+        let tc_hash = liero_net::tc_hash_of(&tc);
+        let game = Game::new(tc.clone(), 2, 42);
+        let net = RollbackSession::host(bind_addr, 0)
+            .map(|mut s| {
+                s.set_tc_hash(tc_hash);
+                s
+            })
+            .ok();
+
+        if let Some(inner) = &mut self.inner {
+            inner.game         = Some(game);
+            inner.net          = net;
+            inner.local_player = 0;
+            inner.kb_inputs    = [0; 4];
+        }
+
+        let room_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let joiner_result: Arc<Mutex<Option<Result<std::net::IpAddr, String>>>> = Arc::new(Mutex::new(None));
+
+        let code_clone   = Arc::clone(&room_code);
+        let result_clone = Arc::clone(&joiner_result);
+        let relay_addr   = self.config.relay_url.clone();
+
+        std::thread::spawn(move || {
+            match liero_net::relay_host_split(&relay_addr, port, |code| {
+                *code_clone.lock().unwrap() = Some(code);
+            }) {
+                Ok(ip) => *result_clone.lock().unwrap() = Some(Ok(ip)),
+                Err(e) => {
+                    *code_clone.lock().unwrap() = Some("ERROR".to_string());
+                    *result_clone.lock().unwrap() = Some(Err(e.to_string()));
+                }
+            }
+        });
+
+        self.game_state = GameState::RelayHost { room_code, joiner_result, udp_port: port };
+    }
+
+    fn start_relay_join(&mut self, code: &str) {
+        let relay = self.config.relay_url.clone();
+        let code = code.to_string();
+
+        match liero_net::relay_join(&relay, &code) {
+            Ok(peer_addr) => {
+                let local: SocketAddr = "0.0.0.0:0".parse().unwrap();
+                let tc = self.load_tc();
+                let tc_hash = liero_net::tc_hash_of(&tc);
+                let game = Game::new(tc, 2, 42);
+                let (net, local_player) = RollbackSession::connect(local, peer_addr, 1)
+                    .map(|mut s| {
+                        s.set_tc_hash(tc_hash);
+                        eprintln!("[net] joining relay peer {peer_addr}... (tc_hash={tc_hash:016x})");
+                        (Some(s), 1usize)
+                    })
+                    .unwrap_or_else(|e| { eprintln!("[net] connect failed: {e}"); (None, 0) });
+
+                if let Some(inner) = &mut self.inner {
+                    inner.game         = Some(game);
+                    inner.net          = net;
+                    inner.local_player = local_player;
+                    inner.kb_inputs    = [0; 4];
+                }
+                self.game_state = GameState::Playing;
+            }
+            Err(e) => {
+                eprintln!("[relay] join failed: {e}");
+                self.game_state = GameState::MainMenu { cursor: 0 };
+            }
+        }
+    }
+
     fn quit_to_menu(&mut self) {
         if let Some(inner) = &mut self.inner {
             inner.game      = None;
@@ -389,6 +480,33 @@ impl App {
                     &[&label],
                     0,
                     &["TYPE PORT NUMBER", "ENTER = START   |   ESC = BACK"],
+                );
+            }
+            GameState::RelayHost { ref room_code, ref joiner_result, udp_port: _ } => {
+                let code_display = room_code.lock().unwrap()
+                    .clone()
+                    .unwrap_or_else(|| "......".to_string());
+                let status = if joiner_result.lock().unwrap().is_some() {
+                    "PEER FOUND — starting...".to_string()
+                } else if code_display == "ERROR" {
+                    "RELAY ERROR — press ESC".to_string()
+                } else {
+                    "WAITING FOR PLAYER 2...".to_string()
+                };
+                inner.renderer.render_menu(
+                    "HOST GAME",
+                    &[&format!("CODE: {code_display}"), &status],
+                    0,
+                    &["SHARE THIS CODE WITH YOUR FRIEND", "ESC = CANCEL"],
+                );
+            }
+            GameState::RelayJoin { ref code } => {
+                let display = if code.is_empty() { "_".to_string() } else { format!("{}_", code) };
+                inner.renderer.render_menu(
+                    "JOIN GAME",
+                    &[&format!("CODE: {display}")],
+                    0,
+                    &["TYPE THE 6-LETTER CODE FROM HOST", "ENTER = CONNECT   |   ESC = BACK"],
                 );
             }
             GameState::OnlineJoin { ref addr_str } => {
@@ -655,11 +773,17 @@ impl ApplicationHandler for App {
                                 0 => self.game_state = GameState::LocalSetup {
                                     mode_idx: self.config.last_mode,
                                 },
-                                1 => self.game_state = GameState::OnlineHost {
-                                    port_str: self.config.host_port.clone(),
+                                1 => {
+                                    // HOST ONLINE — start relay host
+                                    self.start_relay_host();
+                                    self.draw_current_menu();
+                                    return;
                                 },
-                                2 => self.game_state = GameState::OnlineJoin {
-                                    addr_str: String::new(),
+                                2 => {
+                                    // JOIN ONLINE — show relay code input
+                                    self.game_state = GameState::RelayJoin {
+                                        code: String::new(),
+                                    };
                                 },
                                 3 => { self.config.save(); event_loop.exit(); return; }
                                 _ => {}
@@ -728,6 +852,47 @@ impl ApplicationHandler for App {
                         self.draw_current_menu();
                     }
 
+                    GameState::RelayHost { .. } => {
+                        if state != ElementState::Pressed { return; }
+                        match code {
+                            KeyCode::Escape => {
+                                self.quit_to_menu();
+                                self.draw_current_menu();
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    GameState::RelayJoin { code: code_str } => {
+                        if state != ElementState::Pressed { return; }
+                        let mut c = code_str.clone();
+                        match code {
+                            KeyCode::Backspace => { c.pop(); }
+                            KeyCode::Enter | KeyCode::NumpadEnter if c.len() == 6 => {
+                                let code = c.to_uppercase();
+                                self.start_relay_join(&code);
+                                self.inner.as_ref().unwrap().window.request_redraw();
+                                return;
+                            }
+                            KeyCode::Escape => {
+                                self.game_state = GameState::MainMenu { cursor: 0 };
+                                self.draw_current_menu();
+                                return;
+                            }
+                            _ => {
+                                if let Key::Character(ch) = &lk {
+                                    if let Some(ch) = ch.chars().next() {
+                                        if ch.is_ascii_alphabetic() && c.len() < 6 {
+                                            c.push(ch.to_ascii_uppercase());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        self.game_state = GameState::RelayJoin { code: c };
+                        self.draw_current_menu();
+                    }
+
                     GameState::OnlineJoin { addr_str } => {
                         if state != ElementState::Pressed { return; }
                         let mut addr = addr_str.clone();
@@ -777,6 +942,18 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::RedrawRequested => {
+                // Check relay host: transition to Playing when peer joins.
+                if let GameState::RelayHost { ref joiner_result, .. } = self.game_state {
+                    if joiner_result.lock().unwrap().is_some() {
+                        self.game_state = GameState::Playing;
+                    } else {
+                        // Still waiting; request redraw to show updates
+                        self.inner.as_ref().unwrap().window.request_redraw();
+                        self.draw_current_menu();
+                        return;
+                    }
+                }
+
                 if let GameState::Playing = self.game_state {
                     let inner = self.inner.as_mut().unwrap();
                     let game  = inner.game.as_mut().unwrap();

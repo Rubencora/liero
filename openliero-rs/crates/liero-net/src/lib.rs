@@ -366,3 +366,77 @@ impl RollbackSession {
 // ── Public re-exports ─────────────────────────────────────────────────────────
 
 pub use liero_sim::game::GameSnapshot;
+
+// ── Relay matchmaking ────────────────────────────────────────────────────────
+
+/// Connect to the relay server, create a signaling room.
+/// Returns the room code as soon as it's available.
+/// Blocks until a peer joins (or TCP error / timeout).
+///
+/// Call from a background thread — do NOT call from the main game loop.
+///
+/// The callback `on_code` is invoked once the relay responds with the room code.
+/// The function continues blocking until a peer joins, at which point it returns
+/// the peer's public IP address.
+pub fn relay_host_split<F: Fn(String)>(
+    relay_addr: &str,
+    udp_port: u16,
+    on_code: F,
+) -> std::io::Result<std::net::IpAddr> {
+    use std::io::{BufRead, BufReader, Write};
+    let stream = std::net::TcpStream::connect(relay_addr)?;
+    let mut w = stream.try_clone()?;
+    let r = BufReader::new(stream);
+
+    write!(w, "SIGNAL:{udp_port}\n")?;
+    w.flush()?;
+
+    let mut code_received = false;
+    for line in r.lines() {
+        let line = line?;
+        if let Some(c) = line.strip_prefix("ROOM:") {
+            if !code_received {
+                on_code(c.to_string());
+                code_received = true;
+            }
+        } else if let Some(ip_str) = line.strip_prefix("PEER:") {
+            let ip: std::net::IpAddr = ip_str.trim().parse()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    format!("bad PEER IP '{ip_str}': {e}")))?;
+            return Ok(ip);
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,
+        "relay closed before PEER message"))
+}
+
+/// Connect to the relay server, join an existing signaling room.
+/// Returns the host's UDP socket address.
+/// Blocks until paired (or TCP error).
+///
+/// Call from a background thread — do NOT call from the main game loop.
+pub fn relay_join(relay_addr: &str, code: &str)
+    -> std::io::Result<std::net::SocketAddr>
+{
+    use std::io::{BufRead, BufReader, Write};
+    let stream = std::net::TcpStream::connect(relay_addr)?;
+    let mut w = stream.try_clone()?;
+    let r = BufReader::new(stream);
+
+    write!(w, "JOIN:{code}\n")?;
+    w.flush()?;
+
+    for line in r.lines() {
+        let line = line?;
+        if let Some(addr_str) = line.strip_prefix("PEER:") {
+            let addr: std::net::SocketAddr = addr_str.trim().parse()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData,
+                    format!("bad PEER addr '{addr_str}': {e}")))?;
+            return Ok(addr);
+        } else if line.starts_with("ERROR:") {
+            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, line));
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof,
+        "relay closed before PEER message"))
+}

@@ -17,6 +17,13 @@ pub struct Config {
     pub host_port: String,
     /// CRT scanlines effect enabled.
     pub scanlines: bool,
+    /// Relay server address for online matchmaking (IP:PORT).
+    #[serde(default = "default_relay_url")]
+    pub relay_url: String,
+}
+
+fn default_relay_url() -> String {
+    "5.78.121.167:7777".to_string()
 }
 
 impl Default for Config {
@@ -26,6 +33,7 @@ impl Default for Config {
             last_mode: 0,
             host_port: "7777".to_string(),
             scanlines: false,
+            relay_url: default_relay_url(),
         }
     }
 }

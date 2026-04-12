@@ -62,9 +62,19 @@ struct PairInfo {
     from_peer: mpsc::Receiver<Vec<u8>>,
 }
 
+enum RoomMode {
+    /// Standard relay mode: forward all bytes between peers.
+    Relay { pair_tx: mpsc::Sender<PairInfo> },
+    /// Signal-only mode: exchange public IPs then disconnect.
+    Signal {
+        host_tcp_addr: SocketAddr,
+        host_udp_port: u16,
+        notify_tx: mpsc::Sender<SocketAddr>,
+    },
+}
+
 struct Room {
-    /// Host sends PairInfo to this channel once a joiner arrives.
-    pair_tx: mpsc::Sender<PairInfo>,
+    mode: RoomMode,
     created: Instant,
 }
 
@@ -148,6 +158,8 @@ async fn tcp_lifecycle(mut stream: TcpStream, rooms: Rooms, addr: SocketAddr) ->
 
     if cmd == "CREATE" {
         tcp_create(stream, rooms, addr).await
+    } else if let Some(port_str) = cmd.strip_prefix("SIGNAL:") {
+        tcp_signal(stream, rooms, addr, port_str.trim()).await
     } else if let Some(code) = cmd.strip_prefix("JOIN:") {
         tcp_join(stream, rooms, addr, code.trim().to_uppercase()).await
     } else {
@@ -162,7 +174,7 @@ async fn tcp_create(mut stream: TcpStream, rooms: Rooms, addr: SocketAddr) -> Re
         let mut guard = rooms.lock().await;
         evict_expired(&mut guard);
         let code = unique_code(&guard);
-        guard.insert(code.clone(), Room { pair_tx, created: Instant::now() });
+        guard.insert(code.clone(), Room { mode: RoomMode::Relay { pair_tx }, created: Instant::now() });
         code
     };
     eprintln!("[tcp {addr}] room {code} created");
@@ -180,32 +192,86 @@ async fn tcp_create(mut stream: TcpStream, rooms: Rooms, addr: SocketAddr) -> Re
     run_tcp_relay(stream, to_peer, from_peer, addr).await
 }
 
+async fn tcp_signal(
+    mut stream: TcpStream,
+    rooms: Rooms,
+    addr: SocketAddr,
+    port_str: &str,
+) -> Result<()> {
+    let host_udp_port: u16 = port_str.parse()
+        .map_err(|_| anyhow::anyhow!("invalid port in SIGNAL command"))?;
+
+    let (notify_tx, mut notify_rx) = mpsc::channel::<SocketAddr>(1);
+    let code = {
+        let mut guard = rooms.lock().await;
+        evict_expired(&mut guard);
+        let code = unique_code(&guard);
+        guard.insert(
+            code.clone(),
+            Room {
+                mode: RoomMode::Signal {
+                    host_tcp_addr: addr,
+                    host_udp_port,
+                    notify_tx,
+                },
+                created: Instant::now(),
+            },
+        );
+        code
+    };
+
+    eprintln!("[tcp {addr}] signal room {code} created on UDP port {host_udp_port}");
+    stream.write_all(format!("ROOM:{code}\n").as_bytes()).await?;
+
+    // Wait for a joiner.
+    let joiner_addr = timeout(ROOM_TTL, notify_rx.recv())
+        .await
+        .map_err(|_| anyhow::anyhow!("signal room {code} timed out waiting for joiner"))?
+        .ok_or_else(|| anyhow::anyhow!("notify channel closed"))?;
+
+    eprintln!("[tcp {addr}] signal room {code} paired with {joiner_addr}");
+    stream.write_all(format!("PEER:{}\n", joiner_addr.ip()).as_bytes()).await?;
+    Ok(())
+}
+
 async fn tcp_join(
     mut stream: TcpStream,
     rooms: Rooms,
     addr: SocketAddr,
     code: String,
 ) -> Result<()> {
-    // Build our own pair and send host's pair info.
-    let (host_tx, joiner_rx) = mpsc::channel::<Vec<u8>>(64); // host → joiner
-    let (joiner_tx, host_rx) = mpsc::channel::<Vec<u8>>(64); // joiner → host
-
-    let pair_tx = {
+    let room = {
         let mut guard = rooms.lock().await;
         guard.remove(&code)
             .ok_or_else(|| anyhow::anyhow!("room {code} not found"))?
-            .pair_tx
     };
 
-    // Send host its pair data: it receives from joiner (host_rx) and sends to joiner (host_tx).
-    pair_tx.send(PairInfo { to_peer: host_tx, from_peer: host_rx }).await
-        .map_err(|_| anyhow::anyhow!("host disconnected before JOIN"))?;
+    match room.mode {
+        RoomMode::Relay { pair_tx } => {
+            // Build our own pair and send host's pair info.
+            let (host_tx, joiner_rx) = mpsc::channel::<Vec<u8>>(64); // host → joiner
+            let (joiner_tx, host_rx) = mpsc::channel::<Vec<u8>>(64); // joiner → host
 
-    eprintln!("[tcp {addr}] joined room {code}");
-    stream.write_all(b"PAIRED\n").await?;
+            // Send host its pair data: it receives from joiner (host_rx) and sends to joiner (host_tx).
+            pair_tx.send(PairInfo { to_peer: host_tx, from_peer: host_rx }).await
+                .map_err(|_| anyhow::anyhow!("host disconnected before JOIN"))?;
 
-    // Joiner: receives from host (joiner_rx) and sends to host (joiner_tx).
-    run_tcp_relay(stream, joiner_tx, joiner_rx, addr).await
+            eprintln!("[tcp {addr}] joined relay room {code}");
+            stream.write_all(b"PAIRED\n").await?;
+
+            // Joiner: receives from host (joiner_rx) and sends to host (joiner_tx).
+            run_tcp_relay(stream, joiner_tx, joiner_rx, addr).await
+        }
+        RoomMode::Signal { host_tcp_addr, host_udp_port, notify_tx } => {
+            // Signaling mode: send host IP:port to joiner, and joiner IP to host.
+            eprintln!("[tcp {addr}] joined signal room {code}");
+            stream.write_all(format!("PEER:{host_tcp_addr}:{host_udp_port}\n").as_bytes()).await?;
+
+            // Notify the host about the joiner.
+            let _ = notify_tx.send(addr).await;
+            Ok(())
+        }
+    }
 }
 
 /// Bidirectional raw TCP relay after pairing.
@@ -271,6 +337,10 @@ async fn ws_lifecycle(stream: TcpStream, rooms: Rooms, addr: SocketAddr) -> Resu
 
     if cmd_str == "CREATE" {
         ws_create(ws_tx, ws_rx, rooms, addr).await
+    } else if cmd_str.starts_with("SIGNAL:") {
+        // WebSocket clients use CREATE, not SIGNAL (SIGNAL is TCP-only for native clients).
+        ws_tx.send(Message::Text("ERROR:SIGNAL not supported over WebSocket".into())).await?;
+        Ok(())
     } else if let Some(code) = cmd_str.strip_prefix("JOIN:") {
         ws_join(ws_tx, ws_rx, rooms, addr, code.trim().to_uppercase()).await
     } else {
@@ -281,7 +351,7 @@ async fn ws_lifecycle(stream: TcpStream, rooms: Rooms, addr: SocketAddr) -> Resu
 
 async fn ws_create(
     mut ws_tx: impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Send + Unpin + 'static,
-    mut ws_rx: impl StreamExt<Item = tokio_tungstenite::tungstenite::Result<Message>> + Send + Unpin + 'static,
+    ws_rx: impl StreamExt<Item = tokio_tungstenite::tungstenite::Result<Message>> + Send + Unpin + 'static,
     rooms: Rooms,
     addr: SocketAddr,
 ) -> Result<()> {
@@ -290,7 +360,7 @@ async fn ws_create(
         let mut guard = rooms.lock().await;
         evict_expired(&mut guard);
         let code = unique_code(&guard);
-        guard.insert(code.clone(), Room { pair_tx, created: Instant::now() });
+        guard.insert(code.clone(), Room { mode: RoomMode::Relay { pair_tx }, created: Instant::now() });
         code
     };
     eprintln!("[ws {addr}] room {code} created");
@@ -314,23 +384,30 @@ async fn ws_join(
     addr: SocketAddr,
     code: String,
 ) -> Result<()> {
-    let (host_tx, joiner_rx) = mpsc::channel::<Vec<u8>>(64);
-    let (joiner_tx, host_rx)  = mpsc::channel::<Vec<u8>>(64);
-
-    let pair_tx = {
+    let room = {
         let mut guard = rooms.lock().await;
         guard.remove(&code)
             .ok_or_else(|| anyhow::anyhow!("room {code} not found"))?
-            .pair_tx
     };
 
-    pair_tx.send(PairInfo { to_peer: host_tx, from_peer: host_rx }).await
-        .map_err(|_| anyhow::anyhow!("host disconnected before JOIN"))?;
+    match room.mode {
+        RoomMode::Relay { pair_tx } => {
+            let (host_tx, joiner_rx) = mpsc::channel::<Vec<u8>>(64);
+            let (joiner_tx, host_rx)  = mpsc::channel::<Vec<u8>>(64);
 
-    eprintln!("[ws {addr}] joined room {code}");
-    ws_tx.send(Message::Text("PAIRED".into())).await?;
+            pair_tx.send(PairInfo { to_peer: host_tx, from_peer: host_rx }).await
+                .map_err(|_| anyhow::anyhow!("host disconnected before JOIN"))?;
 
-    run_ws_relay(ws_tx, ws_rx, joiner_tx, joiner_rx, addr).await
+            eprintln!("[ws {addr}] joined relay room {code}");
+            ws_tx.send(Message::Text("PAIRED".into())).await?;
+
+            run_ws_relay(ws_tx, ws_rx, joiner_tx, joiner_rx, addr).await
+        }
+        RoomMode::Signal { .. } => {
+            ws_tx.send(Message::Text("ERROR:cannot join signal room over WebSocket".into())).await?;
+            Ok(())
+        }
+    }
 }
 
 async fn run_ws_relay(
