@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenLiero — Play in Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:  #39ff14;
+      --yellow: #ffcc00;
+      --bg:     #0a0a0a;
+      --surface:#111;
+      --text:   #cccccc;
+      --dim:    #666;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── TOP BAR ──────────────────────────────────────────────── */
+    .topbar {
+      border-bottom: 1px solid #1e1e1e;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .topbar .logo {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.65rem;
+      color: var(--green);
+      text-shadow: 0 0 10px rgba(57, 255, 20, 0.4);
+      text-decoration: none;
+    }
+    .topbar .logo:hover { text-decoration: none; opacity: 0.8; }
+
+    .topbar .back {
+      font-size: 0.8rem;
+      color: var(--dim);
+    }
+    .topbar .back:hover { color: var(--green); }
+
+    /* ── MAIN ─────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 2rem 1.5rem;
+      gap: 1.5rem;
+    }
+
+    /* ── CANVAS WRAPPER ───────────────────────────────────────── */
+    .canvas-wrap {
+      position: relative;
+      border: 2px solid #222;
+      background: #000;
+      line-height: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 640px;
+      height: 400px;
+      max-width: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* Loading overlay — shown until WASM starts */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      transition: opacity 0.4s;
+    }
+    #overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 2rem;
+      height: 2rem;
+      border: 2px solid #222;
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #load-msg {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.55rem;
+      color: var(--green);
+      letter-spacing: 0.1em;
+    }
+
+    /* ── CONTROLS ─────────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 640px;
+      width: 100%;
+    }
+
+    .ctrl-block {
+      background: var(--surface);
+      border: 1px solid #1e1e1e;
+      padding: 1rem 1.2rem;
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .ctrl-block h3 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.55rem;
+      color: var(--yellow);
+      margin-bottom: 0.8rem;
+      letter-spacing: 0.1em;
+    }
+
+    .ctrl-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--dim);
+      margin-bottom: 0.35rem;
+    }
+    .ctrl-row .action { color: var(--text); }
+
+    kbd {
+      display: inline-block;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: var(--green);
+      padding: 0.1rem 0.4rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+    }
+
+    /* ── INFO BOX ─────────────────────────────────────────────── */
+    .info-box {
+      border: 1px solid #1e1e1e;
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      color: var(--dim);
+      max-width: 640px;
+      width: 100%;
+    }
+    .info-box::before { content: '> '; color: var(--green); }
+
+    /* ── FOOTER ───────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid #1e1e1e;
+      padding: 1rem 1.5rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--dim);
+    }
+    footer a { color: var(--dim); }
+    footer a:hover { color: var(--green); }
+
+    /* ── RESPONSIVE ───────────────────────────────────────────── */
+    @media (max-width: 660px) {
+      canvas { width: 100%; height: auto; }
+      .controls { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── TOP BAR ──────────────────────────────────────────── -->
+  <header class="topbar">
+    <a class="logo" href="/">OPENLIERO</a>
+    <a class="back" href="/">← back to site</a>
+  </header>
+
+  <!-- ── GAME CANVAS ──────────────────────────────────────── -->
+  <main>
+    <div class="canvas-wrap">
+      <canvas id="canvas" width="640" height="400"></canvas>
+      <div id="overlay">
+        <div class="spinner"></div>
+        <div id="load-msg">LOADING…</div>
+      </div>
+    </div>
+
+    <!-- ── CONTROLS ─────────────────────────────────────── -->
+    <div class="controls">
+      <div class="ctrl-block">
+        <h3>// PLAYER 1</h3>
+        <div class="ctrl-row"><span class="action">Move</span><span><kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Fire</span><span><kbd>LCtrl</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Change weapon</span><span><kbd>LShift</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Jump</span><span><kbd>Space</kbd></span></div>
+      </div>
+      <div class="ctrl-block">
+        <h3>// PLAYER 2</h3>
+        <div class="ctrl-row"><span class="action">Move</span><span><kbd>J</kbd> <kbd>I</kbd> <kbd>K</kbd> <kbd>L</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Fire</span><span><kbd>Enter</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Change weapon</span><span><kbd>RShift</kbd></span></div>
+        <div class="ctrl-row"><span class="action">Jump</span><span><kbd>RCtrl</kbd></span></div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      Press <strong>Enter</strong> or <strong>Space</strong> on the menu to start · <strong>Escape</strong> to return to menu ·
+      Online multiplayer not yet available in the browser version — <a href="/">download</a> the desktop app for online play.
+    </div>
+  </main>
+
+  <!-- ── FOOTER ───────────────────────────────────────────── -->
+  <footer>
+    <a href="https://github.com/Rubencora/liero" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;·&nbsp;
+    OpenLiero — open-source Liero remake in Rust
+  </footer>
+
+  <!-- ── WASM INIT ─────────────────────────────────────────── -->
+  <script type="module">
+    import init from './pkg/liero_web.js';
+
+    async function run() {
+      const overlay = document.getElementById('overlay');
+      const msg     = document.getElementById('load-msg');
+      try {
+        await init();
+        // Hide overlay once WASM is running
+        overlay.classList.add('hidden');
+      } catch (e) {
+        msg.textContent = 'ERROR: ' + e;
+        console.error('[liero]', e);
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>

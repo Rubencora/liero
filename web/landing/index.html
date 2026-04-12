@@ -119,6 +119,16 @@
     .btn .fmt      { font-size: 0.75rem; color: var(--dim); }
     .btn:hover .fmt { color: var(--bg); }
 
+    .btn-play {
+      border-color: var(--yellow);
+      color: var(--yellow);
+    }
+    .btn-play:hover {
+      background: var(--yellow);
+      color: var(--bg);
+      box-shadow: 0 0 18px rgba(255, 204, 0, 0.5);
+    }
+
     /* ── HOW TO PLAY ───────────────────────────────────────────── */
     .howto {
       padding: 3rem 0;
@@ -277,6 +287,11 @@
     <div class="container">
       <h2>// DOWNLOAD</h2>
       <div class="btn-group">
+        <a class="btn btn-play" href="/play/">
+          <span class="platform">▶</span>
+          <span class="label">PLAY NOW</span>
+          <span class="fmt">Browser · No install</span>
+        </a>
         <a class="btn"
            href="https://github.com/Rubencora/liero/releases/latest/download/OpenLiero-macOS.zip"
            download>

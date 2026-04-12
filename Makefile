@@ -23,7 +23,7 @@ CPP_BUILD   := build
 CPP_BIN     := $(CPP_BUILD)/openliero.app/Contents/MacOS/openliero
 TC          := TC/openliero
 WEB_CRATE   := $(RUST_DIR)/crates/liero-web
-WEB_OUT     := web/pkg
+WEB_OUT     := web/play/pkg
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,8 @@ run-cpp: cpp
 # ── Web (WASM) ────────────────────────────────────────────────────────────────
 
 web:
-	wasm-pack build $(WEB_CRATE) --target web --out-dir ../../../$(WEB_OUT)
+	PATH="$$HOME/.cargo/bin:$$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$$PATH" \
+		wasm-pack build $(WEB_CRATE) --target web --out-dir ../../../$(WEB_OUT)
 
 serve-web: web
 	@echo "Serving at http://localhost:8080 — Ctrl-C to stop"
@@ -111,5 +112,6 @@ VPS_WEBROOT := /var/www/liero
 
 deploy-web:
 	rsync -avz --delete web/landing/ $(VPS_HOST):$(VPS_WEBROOT)/
+	rsync -avz --delete web/play/    $(VPS_HOST):$(VPS_WEBROOT)/play/
 	ssh $(VPS_HOST) 'nginx -t && systemctl reload nginx'
 	@echo "✓ Deployed to https://liero.byruben.io"
