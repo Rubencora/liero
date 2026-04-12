@@ -211,7 +211,7 @@ jobs:
         run: |
           ./butler push \
             artifacts/OpenLiero-macOS/OpenLiero-macOS.zip \
-            openliero/openliero:mac \
+            rubencora/openliero:mac \
             --userversion "${{ github.ref_name }}"
 
       - name: Push to Itch.io — Linux
@@ -220,7 +220,7 @@ jobs:
         run: |
           ./butler push \
             artifacts/OpenLiero-linux/OpenLiero-linux.tar.gz \
-            openliero/openliero:linux \
+            rubencora/openliero:linux \
             --userversion "${{ github.ref_name }}"
 
       - name: Push to Itch.io — Windows
@@ -229,5 +229,5 @@ jobs:
         run: |
           ./butler push \
             artifacts/OpenLiero-windows/OpenLiero-windows.zip \
-            openliero/openliero:windows \
+            rubencora/openliero:windows \
             --userversion "${{ github.ref_name }}"
