@@ -105,9 +105,19 @@ impl Renderer {
         let size = window.inner_size();
 
         // ── Instance / Surface ─────────────────────────────────────────────
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
+        // On macOS use Metal explicitly — avoids spurious failures when wgpu
+        // tries Vulkan/DX12 backends that aren't available on this platform.
+        #[cfg(target_os = "macos")]
+        let backends = wgpu::Backends::METAL;
+        #[cfg(not(target_os = "macos"))]
+        let backends = wgpu::Backends::all();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            flags: wgpu::InstanceFlags::default(),
+            backend_options: Default::default(),
+            display: Default::default(),
+            memory_budget_thresholds: Default::default(),
         });
         // SAFETY: window lives as long as the surface because we hold Arc<Window>.
         let surface = instance.create_surface(Arc::clone(&window))?;
@@ -131,7 +141,6 @@ impl Renderer {
                         .using_resolution(adapter.limits()),
                     ..Default::default()
                 },
-                None,
             )
             .await
             .context("failed to create wgpu device")?;
@@ -268,9 +277,9 @@ impl Renderer {
 
         // ── Render pipeline ────────────────────────────────────────────────
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label:                Some("pipeline-layout"),
-            bind_group_layouts:   &[&bgl],
-            push_constant_ranges: &[],
+            label:              Some("pipeline-layout"),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size:     0,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -301,7 +310,7 @@ impl Renderer {
             },
             depth_stencil: None,
             multisample:   wgpu::MultisampleState::default(),
-            multiview:     None,
+            multiview_mask: None,
             cache:         None,
         });
 
@@ -373,12 +382,11 @@ impl Renderer {
         );
 
         let output = match self.surface.get_current_texture() {
-            Ok(t)  => t,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Success(tex) | wgpu::CurrentSurfaceTexture::Suboptimal(tex) => tex,
+            _ => {
                 self.surface.configure(&self.device, &self.config);
                 return;
             }
-            Err(e) => { eprintln!("render: surface error: {e}"); return; }
         };
         let view = output.texture.create_view(&Default::default());
 
@@ -391,6 +399,7 @@ impl Renderer {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view:           &view,
                     resolve_target: None,
+                    depth_slice:    None,
                     ops: wgpu::Operations {
                         load:  wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
@@ -399,6 +408,7 @@ impl Renderer {
                 depth_stencil_attachment: None,
                 timestamp_writes:         None,
                 occlusion_query_set:      None,
+                multiview_mask:           None,
             });
             rpass.set_pipeline(&self.pipeline);
             rpass.set_bind_group(0, &self.bind_group, &[]);

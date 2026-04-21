@@ -108,6 +108,7 @@ fn run(dir: &std::path::Path) -> Result<()> {
             3 => "dtype2",
             4 => "laser",
             5 => "homing",
+            6 => "boomerang",
             _ => "?",
         };
         println!("    [{i:>2}] {name:<28} dmg={:>3}  shot={shot_label}", w.hit_damage);

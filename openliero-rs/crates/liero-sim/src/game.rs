@@ -1308,7 +1308,7 @@ impl Game {
             }
 
             // ── 3.5. Attraction/repulsion force ────────────────────────────────
-            if !in_terrain && weapon.attract_radius > 0 && weapon.attract_force != 0 {
+            if (!in_terrain || weapon.attract_always) && weapon.attract_radius > 0 && weapon.attract_force != 0 {
                 // Copy values to avoid borrow conflicts.
                 let pos_i = self.wobjects[i].pos;
                 let attract_radius = weapon.attract_radius;
@@ -1369,6 +1369,48 @@ impl Game {
                 }
             }
 
+            // ── 3.6. Boomerang return force ───────────────────────────────────
+            if !do_explode && !do_remove && weapon.boomerang_return_force > 0 {
+                let owner = self.wobjects[i].owner_idx;
+                if owner < self.worms.len() && self.worms[owner].alive {
+                    let proj  = self.wobjects[i].pos;
+                    let opos  = self.worms[owner].pos;
+                    let dx    = opos.x.to_int() - proj.x.to_int();
+                    let dy    = opos.y.to_int() - proj.y.to_int();
+                    let dist  = crate::math::vector_length(dx, dy).max(1);
+                    let force = weapon.boomerang_return_force;
+                    self.wobjects[i].vel.x.0 += ((force as i64 * dx as i64) / dist as i64) as i32;
+                    self.wobjects[i].vel.y.0 += ((force as i64 * dy as i64) / dist as i64) as i32;
+                    // Catch: remove when the boomerang reaches its owner.
+                    if dist < 10 {
+                        do_remove = true;
+                    }
+                }
+            }
+
+            // ── 3.7. Tesla Coil area damage tick (when embedded in terrain) ───
+            if !do_explode && !do_remove && weapon.damage_area_tick > 0 && in_terrain {
+                self.wobjects[i].tick_counter += 1;
+                if self.wobjects[i].tick_counter >= weapon.damage_area_tick {
+                    self.wobjects[i].tick_counter = 0;
+                    let coil_x   = self.wobjects[i].pos.x.to_int();
+                    let coil_y   = self.wobjects[i].pos.y.to_int();
+                    let radius   = weapon.attract_radius.max(1);
+                    let owner_i  = self.wobjects[i].owner_idx;
+                    let dmg      = weapon.hit_damage;
+                    let n_worms  = self.worms.len();
+                    for wi in 0..n_worms {
+                        if !self.worms[wi].alive { continue; }
+                        let wx   = self.worms[wi].pos.x.to_int();
+                        let wy   = self.worms[wi].pos.y.to_int();
+                        let dist = crate::math::vector_length(wx - coil_x, wy - coil_y);
+                        if dist < radius {
+                            self.do_damage(wi, dmg, owner_i as i32);
+                        }
+                    }
+                }
+            }
+
             // ── 4. Worm hit detection ─────────────────────────────────────────
             if !do_explode && !do_remove && (weapon.hit_damage > 0 || weapon.worm_collide) {
                 let owner_idx = self.wobjects[i].owner_idx;
@@ -1420,10 +1462,13 @@ impl Game {
 
                         if weapon.worm_explode {
                             do_explode = true;
+                            break 'worm_loop;
+                        } else if weapon.boomerang_return_force > 0 {
+                            // Boomerang passes through worms — damages but keeps flying.
                         } else {
                             do_remove = true;
+                            break 'worm_loop;
                         }
-                        break 'worm_loop;
                     }
                 }
             }

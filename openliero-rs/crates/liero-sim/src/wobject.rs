@@ -35,6 +35,10 @@ pub struct WObject {
     // ── Homing / chain lightning state ───────────────────────────────────
     /// For `STHoming`: remaining homing strength (decays each frame).
     pub homing_strength: i32,
+
+    // ── Tesla Coil / timed-tick state ────────────────────────────────────
+    /// Frame counter for weapons with `damage_area_tick > 0` (Tesla Coil).
+    pub tick_counter: i32,
 }
 
 impl WObject {

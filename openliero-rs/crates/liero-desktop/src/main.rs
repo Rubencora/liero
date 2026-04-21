@@ -579,14 +579,27 @@ impl ApplicationHandler for App {
             .with_title("OpenLiero")
             .with_inner_size(PhysicalSize::new(640u32, 400u32));
 
-        let window = Arc::new(
-            event_loop.create_window(attrs).expect("failed to create window"),
-        );
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                eprintln!("[fatal] cannot create window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
 
         let tc = self.load_tc();
 
-        let mut renderer = pollster::block_on(Renderer::new(Arc::clone(&window), &tc))
-            .expect("failed to init wgpu renderer");
+        let mut renderer = match pollster::block_on(Renderer::new(Arc::clone(&window), &tc)) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[fatal] wgpu renderer init failed: {e}");
+                eprintln!("[fatal] Your macOS version may not be supported by the bundled wgpu version.");
+                eprintln!("[fatal] Try updating the application or running from source with a newer wgpu.");
+                event_loop.exit();
+                return;
+            }
+        };
         renderer.set_scanlines(self.config.scanlines);
 
         let audio = AudioEngine::new(tc.sounds.clone())

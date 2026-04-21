@@ -15,6 +15,8 @@ pub mod shot_type {
     pub const D_TYPE_2:   i32 = 3;
     pub const LASER:      i32 = 4;
     pub const HOMING:     i32 = 5;
+    /// Boomerang: applies constant return-force toward owner each frame.
+    pub const BOOMERANG:  i32 = 6;
 }
 
 /// Dirt effect values.
@@ -95,6 +97,14 @@ pub struct Weapon {
     pub pierce_dirt:           bool,
     /// Swap positions of owner and hit worm on impact (no damage).
     pub worm_swap:             bool,
+
+    // --- Sprint-27 extension fields ---
+    /// Black Hole Grenade: allow attract force even when embedded in terrain.
+    pub attract_always:        bool,
+    /// Tesla Coil: apply hit_damage to worms within attract_radius every N frames (0 = disabled).
+    pub damage_area_tick:      i32,
+    /// Boomerang: acceleration toward owner per frame (used with shotType=BOOMERANG).
+    pub boomerang_return_force: i32,
 }
 
 impl Default for Weapon {
@@ -158,6 +168,9 @@ impl Default for Weapon {
             dirt_deposit:          false,
             pierce_dirt:           false,
             worm_swap:             false,
+            attract_always:        false,
+            damage_area_tick:      0,
+            boomerang_return_force: 0,
         }
     }
 }
