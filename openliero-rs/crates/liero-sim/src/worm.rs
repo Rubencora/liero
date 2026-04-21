@@ -117,6 +117,26 @@ pub struct Worm {
     pub animate:        bool,
     /// Sprite frame index (0-20): angle_frame + walk_offset.
     pub cur_frame:      i32,
+
+    // ── Aiming velocity (Sprint-28) ────────────────────────────────────────────
+    /// Angular velocity for smooth aiming (integer angle units/frame; max ~14 at full speed).
+    pub aim_vel:        i32,
+
+    // ── Charge-up weapon state (Sprint-28) ────────────────────────────────────
+    /// Frames FIRE has been held for the current charge weapon (reset on fire/switch).
+    pub charge_ticks:   i32,
+    /// Whether FIRE was held last frame (used to detect release → fire).
+    pub prev_firing:    bool,
+
+    // ── Power-up timers (Sprint-28) ───────────────────────────────────────────
+    /// Sprint Boots: remaining frames of 50% speed boost (0 = inactive).
+    pub sprint_timer:   i32,
+    /// Kevlar: remaining frames of 50% damage reduction (0 = inactive).
+    pub kevlar_timer:   i32,
+    /// Double Jump: extra mid-air jumps granted by power-up (max 1).
+    pub extra_jumps:    i32,
+    /// Double Jump: mid-air jumps consumed since last landing (reset on ground).
+    pub jumps_used:     i32,
 }
 
 impl Worm {

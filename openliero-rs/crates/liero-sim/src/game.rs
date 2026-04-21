@@ -361,6 +361,62 @@ impl Game {
         for wi in 0..num_worms {
             let inp = if wi < _inputs.len() { _inputs[wi] } else { 0 };
             if self.worms[wi].alive {
+                // ── Input: walk / aim / jump ─────────────────────────────────
+                {
+                    use crate::worm::input;
+                    let consts = &self.tc.data.constants;
+                    let w = &mut self.worms[wi];
+                    let on_ground = w.reacts[react::UP] > 0;
+
+                    // Walk left / right (Sprint Boots: +50% walk velocity).
+                    let sprint = w.sprint_timer > 0;
+                    if inp & input::LEFT != 0 {
+                        let dv = if sprint { consts.walk_vel_left * 3 / 2 } else { consts.walk_vel_left };
+                        w.vel.x.0 = (w.vel.x.0 - dv).max(consts.max_vel_left);
+                    }
+                    if inp & input::RIGHT != 0 {
+                        let dv = if sprint { consts.walk_vel_right * 3 / 2 } else { consts.walk_vel_right };
+                        w.vel.x.0 = (w.vel.x.0 + dv).min(consts.max_vel_right);
+                    }
+
+                    // Jump (ground or Double Jump extra mid-air jump).
+                    let can_jump = on_ground || (w.extra_jumps > w.jumps_used);
+                    if inp & input::JUMP != 0 && can_jump {
+                        if !on_ground { w.jumps_used += 1; }
+                        w.vel.y.0 -= consts.jump_force;
+                    }
+                    if on_ground { w.jumps_used = 0; }
+
+                    // Aim (smooth angular velocity).
+                    if inp & input::UP != 0 {
+                        w.aim_vel = (w.aim_vel - consts.aim_acc_left).max(consts.max_aim_vel_left);
+                    } else if inp & input::DOWN != 0 {
+                        w.aim_vel = (w.aim_vel - consts.aim_acc_right).min(consts.max_aim_vel_right);
+                    } else {
+                        w.aim_vel = (w.aim_vel as i64 * consts.aim_fric_mult as i64
+                            / consts.aim_fric_div as i64) as i32;
+                    }
+                    // Apply aim velocity (angle wraps 0-127).
+                    // Angle is stored as integer × 65536 (itof), extract integer part for clamping.
+                    w.aiming_angle = w.aiming_angle.wrapping_add(w.aim_vel);
+                    // Clamp to firing arc based on direction.
+                    let angle_int = ((w.aiming_angle >> 16) & 0x7f) as i32;
+                    let (lo, hi) = if w.direction != 0 {
+                        (consts.aim_min_right, consts.aim_max_right) // facing right
+                    } else {
+                        (consts.aim_max_left, consts.aim_min_left)   // facing left
+                    };
+                    let clamped = angle_int.clamp(lo, hi);
+                    if clamped != angle_int {
+                        w.aiming_angle = clamped << 16;
+                        w.aim_vel = 0;
+                    }
+
+                    // Tick power-up timers.
+                    if w.sprint_timer > 0 { w.sprint_timer -= 1; }
+                    if w.kevlar_timer > 0 { w.kevlar_timer -= 1; }
+                }
+
                 // Alive: run terrain physics.
                 Self::step_worm_physics(
                     &mut self.worms[wi],
@@ -405,11 +461,23 @@ impl Game {
                                     let health_min = self.tc.data.constants.bonus_min_health;
                                     let heal = self.rand.rand(health_var) as i32 + health_min;
                                     self.bonuses[bi] = None;
-                                    // Apply healing (health is in the checksum).
-                                    self.worms[wi].health =
-                                        (w_health + heal).min(max_health);
+                                    self.worms[wi].health = (w_health + heal).min(max_health);
                                     self.sound_events.push(SoundEvent::BonusCollect);
-                                    // Don't advance bi.
+                                } else if frame == 2 {
+                                    // Sprint Boots — 30 s of 50% speed boost.
+                                    self.bonuses[bi] = None;
+                                    self.worms[wi].sprint_timer = 1800;
+                                    self.sound_events.push(SoundEvent::BonusCollect);
+                                } else if frame == 3 {
+                                    // Kevlar — 15 s of 50% damage reduction.
+                                    self.bonuses[bi] = None;
+                                    self.worms[wi].kevlar_timer = 900;
+                                    self.sound_events.push(SoundEvent::BonusCollect);
+                                } else if frame == 4 {
+                                    // Double Jump — grants one extra mid-air jump.
+                                    self.bonuses[bi] = None;
+                                    self.worms[wi].extra_jumps = 1;
+                                    self.sound_events.push(SoundEvent::BonusCollect);
                                 } else {
                                     bi += 1;
                                 }
@@ -432,20 +500,53 @@ impl Game {
 
                     let cur_weapon = self.worms[wi].current_weapon as usize;
                     let can_fire   = self.worms[wi].reload_timers.get(cur_weapon).copied().unwrap_or(0) <= 0;
+                    let firing_now = inp & input::FIRE != 0;
 
-                    if inp & input::FIRE != 0 && can_fire {
-                        if let Some(weapon) = self.tc.weapons.get(cur_weapon) {
+                    if let Some(weapon) = self.tc.weapons.get(cur_weapon).cloned() {
+                        if weapon.charge_stages > 0 && can_fire {
+                            // ── Charge-up weapon (Gauss Sniper) ─────────────────
+                            if firing_now {
+                                // Accumulate charge while FIRE held.
+                                self.worms[wi].charge_ticks += 1;
+                            } else if self.worms[wi].prev_firing {
+                                // FIRE just released → compute charge stage and fire.
+                                let ticks = self.worms[wi].charge_ticks;
+                                let stage = if weapon.charge_time > 0 {
+                                    (ticks / weapon.charge_time).min(weapon.charge_stages)
+                                } else {
+                                    weapon.charge_stages
+                                };
+                                self.worms[wi].charge_ticks = 0;
+
+                                // Scale: stage 0 = 25% power, full stage = 100%.
+                                let scale_pct = 25 + 75 * stage / weapon.charge_stages;
+
+                                let angle    = (self.worms[wi].aiming_angle >> 16) as usize & 0x7f;
+                                let worm_vel = self.worms[wi].vel;
+                                let slot     = cur_weapon.min(4);
+                                self.worms[wi].reload_timers[slot] = weapon.loading_time;
+
+                                let recoil = weapon.recoil * scale_pct / 100;
+                                if recoil != 0 {
+                                    let (cx, cy) = COSSIN_TABLE[angle];
+                                    self.worms[wi].vel.x.0 -= ((cx as i64 * recoil as i64) / 100) as i32;
+                                    self.worms[wi].vel.y.0 -= ((cy as i64 * recoil as i64) / 100) as i32;
+                                }
+
+                                self.sound_events.push(SoundEvent::WeaponFire { weapon_idx: cur_weapon });
+                                self.create_wobject_charged(cur_weapon, wi, angle, worm_vel, scale_pct);
+                            }
+                        } else if firing_now && can_fire {
+                            // ── Normal instant-fire weapon ───────────────────────
                             let loading_time = weapon.loading_time;
-                            let angle        = self.worms[wi].aiming_angle as usize & 0x7f;
+                            let angle        = (self.worms[wi].aiming_angle >> 16) as usize & 0x7f;
                             let worm_vel     = self.worms[wi].vel;
                             let parts        = weapon.parts.max(1);
                             let distribution = weapon.distribution;
 
-                            // Set reload timer.
                             let slot = cur_weapon.min(4);
                             self.worms[wi].reload_timers[slot] = loading_time;
 
-                            // Recoil (C++: worm.vel -= cossinTable[angle] * recoil / 100).
                             let recoil = weapon.recoil;
                             if recoil != 0 {
                                 let (cx, cy) = COSSIN_TABLE[angle];
@@ -453,10 +554,8 @@ impl Game {
                                 self.worms[wi].vel.y.0 -= ((cy as i64 * recoil as i64) / 100) as i32;
                             }
 
-                            // Emit weapon-fire sound (once per shot burst, not per part).
                             self.sound_events.push(SoundEvent::WeaponFire { weapon_idx: cur_weapon });
 
-                            // Fire each part (spread via distribution).
                             for _ in 0..parts {
                                 let fire_angle = if distribution > 0 {
                                     let spread = self.rand.rand((distribution * 2) as u32) as i32 - distribution;
@@ -468,6 +567,12 @@ impl Game {
                             }
                         }
                     }
+                    // Reset charge if weapon switched.
+                    if !firing_now && !self.worms[wi].prev_firing {
+                        let prev_slot = cur_weapon;
+                        let _ = prev_slot; // charge_ticks reset on release (handled above)
+                    }
+                    self.worms[wi].prev_firing = firing_now;
                 }
 
                 // ── Rendering state (not part of checksum) ───────────────────────────
@@ -1188,6 +1293,8 @@ impl Game {
         let mut actual = amount;
         if attacker_is_jug { actual *= 2; }
         if victim_is_jug   { actual /= 2; }
+        // Kevlar: 50% damage reduction while active.
+        if self.worms[worm_idx].kevlar_timer > 0 { actual /= 2; }
         actual = actual.max(1);
 
         self.worms[worm_idx].health -= actual;
@@ -1433,8 +1540,13 @@ impl Game {
                             w.vel.x.0 += vx.0;
                             w.vel.y.0 += vy.0;
                         }
-                        // Damage.
-                        self.do_damage(wi, weapon.hit_damage, owner_idx as i32);
+                        // Damage (use scaled_damage override for charge weapons).
+                        let hit_dmg = if self.wobjects[i].scaled_damage > 0 {
+                            self.wobjects[i].scaled_damage
+                        } else {
+                            weapon.hit_damage
+                        };
+                        self.do_damage(wi, hit_dmg, owner_idx as i32);
 
                         // Swap Gun: exchange positions of owner and hit worm.
                         if weapon.worm_swap && owner_idx < self.worms.len() {
@@ -1595,6 +1707,58 @@ impl Game {
         self.wobjects.push(wobj);
     }
 
+    /// Like `create_wobject` but scales speed and hit_damage by `scale_pct` / 100.
+    ///
+    /// Used by charge-up weapons (Gauss Sniper): stage 0 = 25%, full = 100%.
+    fn create_wobject_charged(
+        &mut self,
+        weapon_idx: usize,
+        owner_idx:  usize,
+        angle:      usize,
+        extra_vel:  FixedVec,
+        scale_pct:  i32,
+    ) {
+        let Some(weapon) = self.tc.weapons.get(weapon_idx) else { return; };
+        let mut weapon = weapon.clone();
+
+        // Scale speed and damage by charge percentage.
+        weapon.speed      = weapon.speed      * scale_pct / 100;
+        weapon.hit_damage = weapon.hit_damage * scale_pct / 100;
+
+        let speed = weapon.speed as i64;
+        let (cx, cy) = COSSIN_TABLE[angle & 0x7f];
+        let base_vel = FixedVec {
+            x: Fixed(((cx as i64 * speed) / 100) as i32),
+            y: Fixed(((cy as i64 * speed) / 100) as i32),
+        };
+        let proj_vel = if weapon.affect_by_worm {
+            let s = speed.max(100);
+            FixedVec {
+                x: Fixed(base_vel.x.0 + (extra_vel.x.0 as i64 * 100 / s) as i32),
+                y: Fixed(base_vel.y.0 + (extra_vel.y.0 as i64 * 100 / s) as i32),
+            }
+        } else {
+            base_vel
+        };
+
+        let wpos = self.worms[owner_idx].pos;
+        let fire_dist = weapon.detect_distance + 5;
+        let fire_pos = FixedVec {
+            x: Fixed(wpos.x.0 + ((cx as i64 * fire_dist as i64) / 65536) as i32),
+            y: Fixed(wpos.y.0 + ((cy as i64 * fire_dist as i64) / 65536) as i32 - (1 << 16)),
+        };
+        let time_left = if weapon.time_to_explo > 0 {
+            weapon.time_to_explo - self.rand.rand(weapon.time_to_explo_v.max(1) as u32) as i32
+        } else {
+            0
+        };
+
+        let mut wobj = WObject::new(weapon_idx, owner_idx, fire_pos, proj_vel, time_left);
+        // Store the scaled damage; collision code reads this instead of weapon.hit_damage.
+        wobj.scaled_damage = weapon.hit_damage.max(0);
+        self.wobjects.push(wobj);
+    }
+
     /// Returns `true` if all 5×5 pixels centred on `(x, y)` are background.
     fn check_bonus_spawn_position(level: &Level, tc_mat: &[Material], x: i32, y: i32) -> bool {
         let x1 = (x - 2).max(0);
@@ -1639,13 +1803,20 @@ impl Game {
             }
 
             if Self::check_bonus_spawn_position(&self.level, &self.tc_materials, ix, iy) {
-                // Determine frame (0 = weapon, 1 = health).
+                // frame: 0=weapon, 1=health, 2=sprint_boots, 3=kevlar, 4=double_jump.
+                // Distribution: 40% weapon, 40% health, 20% power-up (split 3 ways).
                 let frame = if only_health {
                     1
                 } else if only_weapon {
                     0
                 } else {
-                    self.rand.rand(2) as i32
+                    let r = self.rand.rand(5) as i32; // 0-4
+                    match r {
+                        0 | 1 => 0,      // 40% weapon
+                        2 | 3 => 1,      // 40% health
+                        4     => 2 + self.rand.rand(3) as i32, // 20% power-up (2/3/4)
+                        _     => 0,
+                    }
                 };
 
                 // Lookup timer range from TcBonus[frame].

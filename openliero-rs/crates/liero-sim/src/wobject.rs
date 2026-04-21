@@ -39,6 +39,10 @@ pub struct WObject {
     // ── Tesla Coil / timed-tick state ────────────────────────────────────
     /// Frame counter for weapons with `damage_area_tick > 0` (Tesla Coil).
     pub tick_counter: i32,
+
+    // ── Charge-weapon damage override (Sprint-28) ─────────────────────────
+    /// When > 0, overrides `weapon.hit_damage` at collision time (Gauss Sniper charge).
+    pub scaled_damage: i32,
 }
 
 impl WObject {

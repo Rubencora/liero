@@ -105,6 +105,12 @@ pub struct Weapon {
     pub damage_area_tick:      i32,
     /// Boomerang: acceleration toward owner per frame (used with shotType=BOOMERANG).
     pub boomerang_return_force: i32,
+
+    // --- Sprint-28 extension fields ---
+    /// Gauss Sniper: number of charge stages (0 = instant-fire, 4 = four-stage charge).
+    pub charge_stages: i32,
+    /// Gauss Sniper: frames required to advance one charge stage.
+    pub charge_time:   i32,
 }
 
 impl Default for Weapon {
@@ -171,6 +177,8 @@ impl Default for Weapon {
             attract_always:        false,
             damage_area_tick:      0,
             boomerang_return_force: 0,
+            charge_stages:         0,
+            charge_time:           0,
         }
     }
 }
