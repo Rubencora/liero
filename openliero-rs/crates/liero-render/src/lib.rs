@@ -16,6 +16,9 @@
 //! - HUD health bars.
 //! - Optional CRT scanline darkening (toggle via `set_scanlines`).
 
+pub mod soft;
+pub use soft::SoftRenderer;
+
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -24,6 +27,7 @@ use bytemuck::{Pod, Zeroable};
 use liero_data::{Tc, SPRITE_W, SPRITE_H, SPRITE_SIZE, SMALL_SPRITE_W, SMALL_SPRITE_H, SMALL_SPRITE_SIZE};
 use liero_sim::game::Game;
 use liero_sim::level::{WIDTH as LEVEL_W, HEIGHT as LEVEL_H};
+use liero_sim::math::COSSIN_TABLE;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
@@ -525,22 +529,44 @@ impl Renderer {
     }
 
     /// Render the game-over / victory screen.
-    pub fn render_game_over(&mut self, msg: &str) {
+    /// Render the game-over screen.
+    ///
+    /// `msg` — winner announcement text.
+    /// `scores` — slice of (kills, deaths) per player; length matches player count.
+    pub fn render_game_over(&mut self, msg: &str, scores: &[(i32, i32)]) {
         const C_BG:  u8 = 0;
         const C_PNL: u8 = 1;
         const C_MSG: u8 = 15;
         const C_HNT: u8 = 7;
+        const C_DIM: u8 = 4;
 
         self.frame_buf.fill(C_BG);
 
-        // Central panel.
-        let panel_y = RENDER_H as i32 / 2 - 20;
-        self.fb_rect(20, panel_y, RENDER_W as i32 - 40, 44, C_PNL);
-        self.fb_rect(20, panel_y, RENDER_W as i32 - 40, 1, C_MSG);
-        self.fb_rect(20, panel_y + 43, RENDER_W as i32 - 40, 1, C_MSG);
+        // Panel tall enough for: title + score row + hint.
+        let panel_h = if scores.is_empty() { 44 } else { 58 };
+        let panel_y = RENDER_H as i32 / 2 - panel_h / 2;
+        self.fb_rect(20, panel_y, RENDER_W as i32 - 40, panel_h, C_PNL);
+        self.fb_rect(20, panel_y,              RENDER_W as i32 - 40, 1, C_MSG);
+        self.fb_rect(20, panel_y + panel_h - 1, RENDER_W as i32 - 40, 1, C_MSG);
 
         self.fb_text_center(msg, panel_y + 10, C_MSG);
-        self.fb_text_center("PRESS ENTER TO RETURN", panel_y + 28, C_HNT);
+
+        // Score row: "P1:12  P2:5  P3:8"
+        if !scores.is_empty() {
+            let n = scores.len();
+            // Each entry: "P1:12" = 5 chars × 9px = 45px, gap = 2 chars = 18px → 63px per entry
+            let entry_w = 63i32;
+            let total_w = entry_w * n as i32 - 18; // last entry has no trailing gap
+            let mut sx = (RENDER_W as i32 - total_w) / 2;
+            for (pi, &(kills, _deaths)) in scores.iter().enumerate() {
+                let label = format!("P{}:{}", pi + 1, kills);
+                self.fb_text(&label, sx, panel_y + 28, C_DIM);
+                sx += entry_w;
+            }
+        }
+
+        let hint_y = panel_y + panel_h - 14;
+        self.fb_text_center("PRESS ENTER TO RETURN", hint_y, C_HNT);
 
         self.gpu_present(0);
     }
@@ -628,6 +654,21 @@ impl Renderer {
                 }
             }
 
+            // c2. SObjects — animated explosion/effect large sprites.
+            for sobj in &game.sobjects {
+                if sobj.type_idx >= game.tc.sobjects.len() { continue; }
+                let stype = &game.tc.sobjects[sobj.type_idx];
+                let frame_idx = (stype.start_frame as i32 + sobj.cur_frame) as usize;
+                let total_large = game.tc.large_sprites.len() / SPRITE_SIZE;
+                let frame_idx = frame_idx.min(total_large.saturating_sub(1));
+                let px = sobj.x + ox;
+                let py = sobj.y + oy;
+                blit_large(
+                    &mut self.frame_buf, RENDER_W, rect,
+                    &game.tc.large_sprites, frame_idx, px, py,
+                );
+            }
+
             // d. Worms (16×16 pre-remapped sprites).
             for worm in &game.worms {
                 if !worm.visible { continue; }
@@ -644,29 +685,94 @@ impl Renderer {
                     &game.tc.worm_sprites, frame + dir * 21 + slot * 42, px, py,
                 );
             }
+
+            // e. Crosshairs — small cross projected along each worm's aim angle.
+            const CROSSHAIR_DIST: i32 = 12;
+            const WORM_CROSSHAIR_COLORS: [u8; 4] = [200, 210, 220, 230];
+            for worm in &game.worms {
+                if !worm.visible { continue; }
+                let angle = (worm.aiming_angle >> 16) as usize & 0x7f;
+                let (dx, dy) = COSSIN_TABLE[angle];
+                let wx = (worm.pos.x.0 >> 16) + ox;
+                let wy = (worm.pos.y.0 >> 16) + oy;
+                let cx = wx + (dx * CROSSHAIR_DIST) / 65536;
+                let cy = wy + (dy * CROSSHAIR_DIST) / 65536;
+                let color = WORM_CROSSHAIR_COLORS[worm.index & 3];
+                put_pixel(&mut self.frame_buf, RENDER_W, rect, cx,     cy,     color);
+                put_pixel(&mut self.frame_buf, RENDER_W, rect, cx - 1, cy,     color);
+                put_pixel(&mut self.frame_buf, RENDER_W, rect, cx + 1, cy,     color);
+                put_pixel(&mut self.frame_buf, RENDER_W, rect, cx,     cy - 1, color);
+                put_pixel(&mut self.frame_buf, RENDER_W, rect, cx,     cy + 1, color);
+            }
         }
 
         // e. HUD health bars (palette-index bars in the HUD strip).
         self.draw_hud(game);
     }
 
-    /// Draw basic health bars in the HUD strip (y = HUD_Y … RENDER_H).
+    /// Draw health + reload bars in the HUD strip (y = HUD_Y … RENDER_H).
     fn draw_hud(&mut self, game: &Game) {
-        const BAR_H: i32 = 4;
-        const BAR_TOP: i32 = HUD_Y + 3;
         const FULL_BAR_W: i32 = 80;
-        // Palette indices for each worm's health bar.
+        // Palette indices for each worm's bars.
         const WORM_BAR_COLORS: [u8; 4] = [200, 210, 220, 230];
+        // Reload bar uses a slightly shifted shade of the same worm colour range.
+        const WORM_RELOAD_COLORS: [u8; 4] = [203, 213, 223, 233];
+        const RELOAD_BG_COLOR: u8 = 1; // dark background when still reloading
 
         let clip = [0i32, HUD_Y, RENDER_W as i32, RENDER_H as i32];
 
+        // ── Health bars ───────────────────────────────────────────────────────
+        const HP_TOP: i32  = HUD_Y + 3;
+        const HP_H: i32    = 4;
+
         for (i, worm) in game.worms.iter().enumerate() {
-            let bar_x = (i as i32) * 160; // 160px per player column
+            let bar_x    = (i as i32) * 160;
             let health_w = (worm.health.max(0) * FULL_BAR_W / 100).min(FULL_BAR_W);
-            let color = WORM_BAR_COLORS[i & 3];
+            let color    = WORM_BAR_COLORS[i & 3];
             for px in bar_x .. bar_x + health_w {
-                for py in BAR_TOP .. BAR_TOP + BAR_H {
+                for py in HP_TOP .. HP_TOP + HP_H {
                     put_pixel(&mut self.frame_buf, RENDER_W, clip, px, py, color);
+                }
+            }
+        }
+
+        // ── Reload bars ───────────────────────────────────────────────────────
+        // Drawn 3 px below health bars; 2 px tall; full width = FULL_BAR_W.
+        const RL_TOP: i32 = HP_TOP + HP_H + 3;
+        const RL_H: i32   = 2;
+
+        for (i, worm) in game.worms.iter().enumerate() {
+            let bar_x = (i as i32) * 160;
+            let color  = WORM_RELOAD_COLORS[i & 3];
+
+            let slot        = worm.current_weapon.clamp(0, 4) as usize;
+            let weapon_idx  = worm.weapon_slots.get(slot).copied().unwrap_or(0);
+            let loading_time = game.tc.weapons.get(weapon_idx)
+                .map(|w| w.loading_time)
+                .unwrap_or(0);
+
+            // Draw dark background for the full bar.
+            for px in bar_x .. bar_x + FULL_BAR_W {
+                for py in RL_TOP .. RL_TOP + RL_H {
+                    put_pixel(&mut self.frame_buf, RENDER_W, clip, px, py, RELOAD_BG_COLOR);
+                }
+            }
+
+            if loading_time > 0 {
+                let reload_left = worm.reload_timers.get(slot).copied().unwrap_or(0).max(0);
+                let ready_frac  = 1.0 - (reload_left as f32 / loading_time as f32).clamp(0.0, 1.0);
+                let filled_w    = (ready_frac * FULL_BAR_W as f32) as i32;
+                for px in bar_x .. bar_x + filled_w {
+                    for py in RL_TOP .. RL_TOP + RL_H {
+                        put_pixel(&mut self.frame_buf, RENDER_W, clip, px, py, color);
+                    }
+                }
+            } else {
+                // Instant-fire weapon — bar always full.
+                for px in bar_x .. bar_x + FULL_BAR_W {
+                    for py in RL_TOP .. RL_TOP + RL_H {
+                        put_pixel(&mut self.frame_buf, RENDER_W, clip, px, py, color);
+                    }
                 }
             }
         }

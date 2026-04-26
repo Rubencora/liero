@@ -23,6 +23,7 @@ pub mod input {
     pub const JUMP:   u32 = 1 << 5;
     pub const CHANGE: u32 = 1 << 6;
     pub const DIG:    u32 = 1 << 7;
+    pub const ROPE:   u32 = 1 << 8;
 }
 
 /// Reaction force direction indices — mirrors C++ `Worm::RF*` enum in `worm.hpp`.
@@ -63,6 +64,8 @@ pub struct Worm {
     pub lives:          i32,
     /// Kill count this match.
     pub kills:          i32,
+    /// Death count this match.
+    pub deaths:         i32,
     /// General-purpose countdown timer (respawn delay, weapon timer, …).
     pub timer:          i32,
 
@@ -71,6 +74,8 @@ pub struct Worm {
     pub current_weapon: i32,
     /// Per-weapon-slot reload counters (5 slots matching C++ `wormWeapons`).
     pub reload_timers:  [i32; 5],
+    /// Remaining ammo per weapon slot. -1 = unlimited.
+    pub weapon_ammo:    [i32; 5],
 
     // ── Physics ──────────────────────────────────────────────────────────────
     /// Accumulated terrain reaction forces, one per direction (UP/DOWN/LEFT/RIGHT).
@@ -107,6 +112,10 @@ pub struct Worm {
     /// Permanently out of the match (lives exhausted + death animation done).
     /// Set by `Game::step()` when lives ≤ 0 and `killed_timer` hits 0.
     pub eliminated:     bool,
+    /// True if this worm is controlled by bot AI instead of player input.
+    pub is_bot:         bool,
+    /// Bot difficulty level: 0=Easy, 1=Medium, 2=Hard.
+    pub bot_difficulty: i32,
 
     // ── Rendering state (updated by game.step, read by renderer) ─────────────
     /// Facing direction: 0 = left, 1 = right.
@@ -137,6 +146,47 @@ pub struct Worm {
     pub extra_jumps:    i32,
     /// Double Jump: mid-air jumps consumed since last landing (reset on ground).
     pub jumps_used:     i32,
+
+    // ── Input history ─────────────────────────────────────────────────────────
+    /// Input bits from the previous frame (used for edge detection, e.g. weapon change).
+    pub prev_inp:       u32,
+
+    // ── Fire cone ─────────────────────────────────────────────────────────────
+    /// Frames remaining before the worm can fire again (per weapon.fire_cone).
+    /// Mirrors C++ `Worm::fireCone`. Decremented each frame; blocks firing when > 0.
+    pub fire_cone:      i32,
+
+    // ── Damage flash (Sprint-38) ───────────────────────────────────────────────
+    /// Frames to display red tint after taking damage (0 = inactive).
+    /// Set to 8 when worm takes damage; decremented each frame.
+    pub damage_flash:   i32,
+
+    // ── Shell casing delay ─────────────────────────────────────────────────────
+    /// Countdown to spawn shell casing (0 = inactive).
+    pub leave_shell_timer: i32,
+
+    // ── Weapon loadout ────────────────────────────────────────────────────────
+    /// Weapon type indices for each of the 5 slots.
+    /// `weapon_slots[current_weapon]` → index into `Tc::weapons`.
+    /// Defaults to [0, 1, 2, 3, 4] (first 5 weapons in TC order).
+    pub weapon_slots:   [usize; 5],
+
+    // ── Dig ───────────────────────────────────────────────────────────────────
+    /// True when the worm is allowed to dig (LEFT+RIGHT combo).
+    /// Resets to true when the combo is released. Mirrors C++ `Worm::ableToDig`.
+    pub able_to_dig:    bool,
+
+    // ── Ninja Rope ────────────────────────────────────────────────────────────
+    /// True if the rope is deployed (hook flying or attached).
+    pub rope_active:    bool,
+    /// True if the hook has embedded in terrain.
+    pub rope_attached:  bool,
+    /// World position of the rope hook (Q16.16).
+    pub rope_hook:      FixedVec,
+    /// Velocity of the flying hook (Q16.16 pixels/frame).
+    pub rope_hook_vel:  FixedVec,
+    /// Max rope length in integer pixels (set when hook attaches).
+    pub rope_len:       i32,
 }
 
 impl Worm {
@@ -145,11 +195,14 @@ impl Worm {
             index,
             health,
             lives,
-            alive:     true,
-            ready:     true,
-            direction: 1,
-            visible:   true,
-            team_id:   -1,
+            alive:        true,
+            ready:        true,
+            direction:    1,
+            visible:      true,
+            team_id:      -1,
+            able_to_dig:  true,
+            weapon_slots: [0, 1, 2, 3, 4],
+            weapon_ammo:  [-1; 5],  // -1 = unlimited by default
             ..Default::default()
         }
     }

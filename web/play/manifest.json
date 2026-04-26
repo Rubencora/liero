@@ -1,0 +1,14 @@
+{
+  "name": "OpenLiero",
+  "short_name": "Liero",
+  "description": "Browser port of the classic Liero worm game",
+  "start_url": "/play/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#39ff14",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

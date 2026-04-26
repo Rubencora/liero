@@ -24,4 +24,5 @@ pub mod levelgen;
 pub mod worm;
 pub mod wobject;
 pub mod nobject;
+pub mod sobject;
 pub mod game;

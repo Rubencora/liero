@@ -80,6 +80,7 @@ pub struct Weapon {
     pub obj_trail_delay:   i32,
     pub part_trail_type:   i32,
     pub part_trail_delay:  i32,
+    pub rem_exp_object:    bool,
 
     // --- Optional string refs ---
     pub splinter_type:   Option<String>,
@@ -162,6 +163,7 @@ impl Default for Weapon {
             obj_trail_delay:       0,
             part_trail_type:       0,
             part_trail_delay:      0,
+            rem_exp_object:        false,
             splinter_type:         None,
             obj_trail_type:        None,
             part_trail_obj:        None,
