@@ -43,3 +43,6 @@ cmake_install.cmake
 # copied manually for building/running project
 /_build/*icon*.png
 /_build/liero.icns
+
+# Environment variables
+.env
